@@ -19,6 +19,7 @@
 #include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QStandardItemModel>
 #include <QStyle>
 #include <QTimer>
 #include <QUrl>
@@ -26,6 +27,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -97,9 +99,14 @@ void MainWindow::buildUi()
 
     // Frame interpolation: Off (default, no RIFE overhead) or RIFE 2x via
     // mpv's vapoursynth filter. See InterpolationController.
+    // Items are labelled with actual frame rates once a file is loaded
+    // (see updateInterpolationLabels): "Original (24 fps)", "48 fps (RIFE)",
+    // "60 fps (RIFE)". Index 0 = Off, 1 = double rate, 2 = 60 fps.
     interpolationMode_ = new QComboBox(controls_);
-    interpolationMode_->addItem("Off");
-    interpolationMode_->addItem(QString::fromUtf8("RIFE 2×"));
+    interpolationMode_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    interpolationMode_->addItem("Original");
+    interpolationMode_->addItem("Double frame rate (RIFE)");
+    interpolationMode_->addItem("60 fps (RIFE)");
     interpolationMode_->setCurrentIndex(0);
     interpolationMode_->setToolTip("Frame interpolation (RIFE v4.6 via VapourSynth, Vulkan GPU)");
 
@@ -275,6 +282,7 @@ void MainWindow::handleEvent(mpv_event *event)
         paused_ = false;
         playButton_->setText("Pause");
         QTimer::singleShot(0, this, &MainWindow::refreshTracks);
+        QTimer::singleShot(0, this, &MainWindow::updateInterpolationLabels);
     } else if (event->event_id == MPV_EVENT_END_FILE) {
         playButton_->setText("Play");
     } else if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
@@ -293,14 +301,67 @@ void MainWindow::interpolationModeChanged(int index)
         return;
     }
 
-    const auto mode = index == 1 ? InterpolationController::Mode::Rife2x
-                                 : InterpolationController::Mode::Off;
+    auto mode = InterpolationController::Mode::Off;
+    if (index == 1) {
+        mode = InterpolationController::Mode::RifeDouble;
+    } else if (index == 2) {
+        mode = InterpolationController::Mode::Rife60;
+    }
 
     QString error;
     if (!interpolation_->setMode(mode, &error)) {
         const QSignalBlocker blocker(interpolationMode_);
         interpolationMode_->setCurrentIndex(0);
         showInterpolationError(error);
+    }
+}
+
+QString MainWindow::formatFps(double fps)
+{
+    if (std::abs(fps - std::round(fps)) < 0.005) {
+        return QString::number(qRound(fps));
+    }
+    QString text = QString::number(fps, 'f', 3);
+    while (text.endsWith('0')) {
+        text.chop(1);
+    }
+    return text;
+}
+
+void MainWindow::updateInterpolationLabels()
+{
+    if (!mpv_ || !interpolationMode_) {
+        return;
+    }
+
+    double containerFps = 0.0;
+    mpv_get_property(mpv_, "container-fps", MPV_FORMAT_DOUBLE, &containerFps);
+    const double fps = InterpolationController::normalizedFps(containerFps);
+
+    if (fps > 0.0) {
+        interpolationMode_->setItemText(0, QString("Original (%1 fps)").arg(formatFps(fps)));
+        interpolationMode_->setItemText(1, QString("%1 fps (RIFE)").arg(formatFps(fps * 2.0)));
+    } else {
+        interpolationMode_->setItemText(0, "Original");
+        interpolationMode_->setItemText(1, "Double frame rate (RIFE)");
+    }
+
+    // 60 fps mode only makes sense below 60 fps.
+    const bool can60 = InterpolationController::supports60(fps);
+    if (auto *model = qobject_cast<QStandardItemModel *>(interpolationMode_->model())) {
+        if (QStandardItem *item = model->item(2)) {
+            item->setEnabled(can60);
+            item->setToolTip(can60 ? QString()
+                                   : QString("Only available for videos below 60 fps"));
+        }
+    }
+
+    if (!can60 && interpolationMode_->currentIndex() == 2) {
+        interpolationMode_->setCurrentIndex(0); // turns RIFE off via interpolationModeChanged
+        showInterpolationError(fps > 0.0
+                                   ? QString("This video is already %1 fps, so 60 fps mode was turned off.")
+                                         .arg(formatFps(fps))
+                                   : QString("This video does not report a frame rate, so 60 fps mode was turned off."));
     }
 }
 
@@ -318,8 +379,7 @@ void MainWindow::showInterpolationError(const QString &message)
         QMessageBox::warning(
             this,
             "Frame interpolation",
-            QString::fromUtf8("RIFE 2× could not be enabled. Playback continues without interpolation.\n\n%1")
-                .arg(message));
+            QString("Frame interpolation is off. Playback continues normally.\n\n%1").arg(message));
     });
 }
 

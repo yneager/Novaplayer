@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QStringList>
 
+#include <cmath>
 #include <cstdlib>
 #include <stdlib.h>
 
@@ -34,6 +35,30 @@ InterpolationController::InterpolationController(mpv_handle *mpv, QObject *paren
     : QObject(parent)
     , mpv_(mpv)
 {
+}
+
+double InterpolationController::normalizedFps(double containerFps)
+{
+    if (!std::isfinite(containerFps) || containerFps <= 1.0) {
+        return 0.0;
+    }
+    static const double standardRates[] = {24000.0 / 1001.0, 24.0, 25.0, 30000.0 / 1001.0, 30.0,
+                                           48.0, 50.0, 60000.0 / 1001.0, 60.0};
+    double nearest = standardRates[0];
+    for (double rate : standardRates) {
+        if (std::abs(containerFps - rate) < std::abs(containerFps - nearest)) {
+            nearest = rate;
+        }
+    }
+    if (std::abs(containerFps - nearest) / nearest < 0.005) {
+        return nearest;
+    }
+    return containerFps;
+}
+
+bool InterpolationController::supports60(double normalizedFps)
+{
+    return normalizedFps > 0.0 && normalizedFps < 59.0;
 }
 
 QString InterpolationController::runtimeDirectory()
@@ -148,15 +173,19 @@ QString InterpolationController::quoted(const QString &value)
     return QStringLiteral("%") + QString::number(bytes) + QStringLiteral("%") + value;
 }
 
-bool InterpolationController::addFilter(QString *error)
+bool InterpolationController::addFilter(Mode mode, QString *error)
 {
     const QDir rife(runtimeDirectory());
     const QString script = QDir::toNativeSeparators(rife.filePath(kScriptFile));
     const QString runtime = QDir::toNativeSeparators(rife.absolutePath());
 
+    // rife.vpy reads "<mode>|<runtime dir>" from mpv's user-data sub-option.
+    const QString modeKey = mode == Mode::Rife60 ? QStringLiteral("60") : QStringLiteral("double");
+    const QString userData = modeKey + QStringLiteral("|") + runtime;
+
     const QString spec = QStringLiteral("@") + QLatin1String(kFilterLabel)
                          + QStringLiteral(":vapoursynth=file=") + quoted(script)
-                         + QStringLiteral(":user-data=") + quoted(runtime);
+                         + QStringLiteral(":user-data=") + quoted(userData);
 
     const QByteArray specUtf8 = spec.toUtf8();
     const char *args[] = {"vf", "add", specUtf8.constData(), nullptr};
@@ -207,24 +236,28 @@ bool InterpolationController::setMode(Mode mode, QString *error)
         return true;
     }
 
+    // Switching between two RIFE modes: drop the old filter first.
+    if (mode_ != Mode::Off) {
+        removeFilter();
+        mode_ = Mode::Off;
+    }
+
     if (!checkRuntimeFiles(error)) {
         return false;
     }
 
     if (!preloadVsScript(error)) {
-        mode_ = Mode::Off;
         return false;
     }
 
-    if (!addFilter(error)) {
+    if (!addFilter(mode, error)) {
         // mpv does not add the filter when creation fails, but make sure no
         // half-configured entry is left behind.
         removeFilter();
-        mode_ = Mode::Off;
         return false;
     }
 
-    mode_ = Mode::Rife2x;
+    mode_ = mode;
     return true;
 }
 
@@ -259,7 +292,7 @@ void InterpolationController::handleLogMessage(const QString &prefix, const QStr
     // mpv disables a failed user filter and continues with pass-through video
     // ("Disabling filter <label> because it has failed."). Clean up our entry
     // and report it so the UI can fall back to Off.
-    if (mode_ == Mode::Rife2x && line.contains("Disabling filter") && line.contains(kFilterLabel)) {
+    if (mode_ != Mode::Off && line.contains("Disabling filter") && line.contains(kFilterLabel)) {
         removeFilter();
         mode_ = Mode::Off;
         QString reason = lastFilterError_.isEmpty()

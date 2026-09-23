@@ -12,7 +12,19 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
-## Latest Fix: RIFE Activation (after user report)
+## Latest Change: Frame-Rate Labels + 60 fps Mode
+The user confirmed that RIFE works in `NovaPlayer.exe` after the activation fix below.
+
+The selector now has three entries, labelled with the video's real rates:
+- index 0: "Original (N fps)", which is Off;
+- index 1: "2N fps (RIFE)", which doubles the frame rate;
+- index 2: "60 fps (RIFE)", which targets 60 fps.
+
+The user asked not to use the name "2×". Labels are refreshed on `MPV_EVENT_FILE_LOADED` from mpv's `container-fps`, using `InterpolationController::normalizedFps()`. The 60 fps entry is disabled for sources at 59 fps or above, and an active 60 fps mode turns off with a message on such files.
+
+`rife.vpy` receives `user-data = "<double|60>|<runtime dir>"`. In 60 mode it uses `factor = 60 / snapped container_fps`, because mpv's `video_in` carries no fps and the plugin's `fps_num` option would throw. Verified with the pinned `mpv.exe`: 24, 25 and 30 fps each became 60 fps, and 60 fps sources were refused cleanly. The C++ UI is build-verified by CI only.
+
+## Earlier Fix: RIFE Activation (after user report)
 The first RIFE build (PR #1) was built by CI. When the user selected RIFE 2× it failed with "mpv could not create the VapourSynth filter: error running command".
 
 Root cause: mpv on Windows caches the environment on its first `getenv()` call (`osdep/io.c`, `init_getenv`, run once). NovaPlayer set `VSSCRIPT_PATH` only when RIFE was selected, long after `mpv_create()`, so mpv never saw it and `dlopen("VSScript.dll")` failed. The earlier local tests used `mpv.exe` with the variable set before launch, which is why they did not catch it.
@@ -39,8 +51,8 @@ These are the "do not break" baseline for all further work.
 ## Current State
 Everything from the base player above, plus:
 
-- **Frame Interpolation: Off | RIFE 2×** combo box in the track row of the control bar. Default Off.
-- RIFE 2× = mpv's built-in `vapoursynth` video filter running `rife/rife.vpy`, which calls the existing VapourSynth-RIFE-ncnn-Vulkan plugin (RIFE v4.6, ncnn/Vulkan). NovaPlayer contains no decoding, rendering or inference code.
+- **Frame Interpolation** combo box in the track row of the control bar: Original (default, Off), double frame rate (RIFE), and 60 fps (RIFE).
+- RIFE modes = mpv's built-in `vapoursynth` video filter running `rife/rife.vpy`, which calls the existing VapourSynth-RIFE-ncnn-Vulkan plugin (RIFE v4.6, ncnn/Vulkan). NovaPlayer contains no decoding, rendering or inference code.
 - Portable runtime (embedded Python + VapourSynth + plugin + model) is assembled by CI from pinned, SHA-256-verified downloads.
 
 ### Pipeline

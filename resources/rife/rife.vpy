@@ -1,4 +1,5 @@
-# NovaPlayer RIFE 2x frame-interpolation script for mpv's `vapoursynth` video filter.
+# NovaPlayer RIFE frame-interpolation script for mpv's `vapoursynth` video filter
+# (modes: double the frame rate, or 60 fps).
 #
 # Pipeline:  libmpv decode -> mpv vapoursynth filter -> this script
 #            -> VapourSynth-RIFE-ncnn-Vulkan (ncnn/Vulkan) -> libmpv rendering
@@ -19,7 +20,9 @@
 #   MiscFilters.dll                      vs-miscfilters-obsolete (misc.SCDetect)
 #   models/rife-v4.6_ensembleFalse/      RIFE v4.6 model (flownet.bin/.param)
 
+import math
 import os
+from fractions import Fraction
 
 import vapoursynth as vs
 
@@ -31,21 +34,72 @@ MISC_PLUGIN_FILE = "MiscFilters.dll"
 # This is the plugin's model index 23 ("rife-v4.6 (ensemble=False)").
 RIFE_MODEL_DIR = os.path.join("models", "rife-v4.6_ensembleFalse")
 
-# Interpolation factor for this milestone: exactly 2x (24 -> 48, 30 -> 60, ...).
-FACTOR_NUM = 2
-FACTOR_DEN = 1
-
 # misc.SCDetect threshold used by mpv-RIFE; frames flagged as scene changes are
 # duplicated by the plugin instead of being interpolated across the cut.
 SCENE_CHANGE_THRESHOLD = 0.1
+
+# Modes selected by NovaPlayer through mpv's `user-data` sub-option, formatted
+# as "<mode>|<runtime dir>":
+#   double : 2x the source frame rate (24 -> 48, 30 -> 60, ...)
+#   60     : 60 fps output for sources below 60 fps
+MODE_DOUBLE = "double"
+MODE_60 = "60"
+TARGET_60 = Fraction(60)
+
+# Standard rates used to clean up container frame rates that are slightly off
+# (e.g. a 24 fps MP4 reported as 24.1 fps because of its timebase).
+_STANDARD_RATES = [Fraction(24000, 1001), Fraction(24), Fraction(25), Fraction(30000, 1001),
+                   Fraction(30), Fraction(48), Fraction(50), Fraction(60000, 1001), Fraction(60)]
+
+
+def _parse_user_data():
+    raw = globals().get("user_data", "") or ""
+    if "|" in raw:
+        mode, directory = raw.split("|", 1)
+        return mode.strip(), directory
+    return MODE_DOUBLE, raw
+
+
+MODE, USER_DIR = _parse_user_data()
+
+
+def _source_fps():
+    """Source frame rate as reported by mpv (container_fps), snapped to a standard rate."""
+    fps = globals().get("container_fps", 0.0) or 0.0
+    if not math.isfinite(fps) or fps <= 1.0:
+        return None
+    nearest = min(_STANDARD_RATES, key=lambda rate: abs(fps - float(rate)))
+    if abs(fps - float(nearest)) / float(nearest) < 0.005:
+        return nearest
+    return Fraction(fps).limit_denominator(1001)
+
+
+def _factor():
+    """RIFE factor_num/factor_den for the selected mode.
+
+    The plugin's fps_num/fps_den options need a clip frame rate, which mpv's
+    `video_in` does not carry, so the target is expressed as a factor instead.
+    Output timing still comes from mpv's per-frame durations (the plugin
+    scales them by factor_den/factor_num), so A/V sync is unaffected.
+    """
+    if MODE == MODE_DOUBLE:
+        return 2, 1
+    if MODE == MODE_60:
+        fps = _source_fps()
+        if fps is None:
+            raise vs.Error("60 fps mode needs a known video frame rate, but this file does not report one.")
+        if fps >= Fraction(59):
+            raise vs.Error(f"60 fps mode is only for videos below 60 fps (this video is {float(fps):.3f} fps).")
+        factor = TARGET_60 / fps
+        return factor.numerator, factor.denominator
+    raise vs.Error(f"Unknown NovaPlayer RIFE mode: {MODE!r}")
 
 
 def _runtime_dir():
     """Return the directory that holds the plugin DLLs and models."""
     candidates = []
-    user_data = globals().get("user_data", "")
-    if user_data:
-        candidates.append(user_data)
+    if USER_DIR:
+        candidates.append(USER_DIR)
     script_file = globals().get("__file__")
     if script_file:
         candidates.append(os.path.dirname(os.path.abspath(script_file)))
@@ -135,13 +189,14 @@ def build(clip):
     rgb_template = core.std.BlankClip(clip, format=vs.RGBS, keep=True)
     rgb = core.std.FrameEval(rgb_template, to_rgb, prop_src=clip)
 
-    # 2x interpolation with the existing RIFE plugin (model_path pins v4.6).
+    # Interpolation with the existing RIFE plugin (model_path pins v4.6).
     # GPU selection is left to the plugin/ncnn default (ncnn::get_default_gpu_index).
+    factor_num, factor_den = _factor()
     interpolated = core.rife.RIFE(
         rgb,
         model_path=model_path,
-        factor_num=FACTOR_NUM,
-        factor_den=FACTOR_DEN,
+        factor_num=factor_num,
+        factor_den=factor_den,
         sc=True,
     )
 

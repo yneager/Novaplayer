@@ -54,6 +54,7 @@ private slots:
     void subtitleTrackChanged(int index);
     void interpolationModeChanged(int index);
     void interpolationDeactivated(const QString &reason);
+    void updateInterpolationLabels();
 
 private:
     static void wakeup(void *ctx);
@@ -78,6 +79,7 @@ private:
     void updateTimeLabel();
     void showInterpolationError(const QString &message);
     static QString formatTime(double seconds);
+    static QString formatFps(double fps);
 
     mpv_handle *mpv_ = nullptr;
     InterpolationController *interpolation_ = nullptr;

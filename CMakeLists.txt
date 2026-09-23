@@ -34,6 +34,6 @@ if(WIN32)
 endif()
 
 if(MSVC)
-  # Sources are UTF-8 (UI strings such as "RIFE 2×").
+  # Sources are UTF-8.
   target_compile_options(NovaPlayer PRIVATE /utf-8)
 endif()

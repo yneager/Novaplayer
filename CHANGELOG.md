@@ -2,6 +2,28 @@
 
 This file records notable completed work visible in the repository history.
 
+## 2026-09-23 — Frame-rate labels and 60 fps mode
+
+### Added
+- **60 fps (RIFE)** mode. `rife.vpy` computes the RIFE factor as `60 / source fps`, for example 5/2 for 24 fps, 12/5 for 25 fps, 2/1 for 30 fps and 1001/400 for 23.976 fps. It does not use the plugin's `fps_num` option, because mpv's `video_in` clip has no frame rate. The source rate is mpv's `container_fps`, snapped to the nearest standard rate within 0.5%. Output timing still comes from mpv's per-frame durations. The mode is refused for sources at 59 fps or above and greyed out in the UI.
+
+### Changed
+- The selector no longer says "RIFE 2×". Entries are labelled with the current video's real frame rates, for example "Original (24 fps)", "48 fps (RIFE)" and "60 fps (RIFE)". Before a file is loaded they read "Original", "Double frame rate (RIFE)" and "60 fps (RIFE)".
+- The mode is passed to `rife.vpy` through mpv's `user-data` sub-option as `<mode>|<runtime dir>`, where mode is `double` or `60`. Switching between RIFE modes removes and re-adds only `@novarife`.
+
+### Verification
+- The pinned `mpv.exe` and runtime were tested on an RX 9070 XT. `estimated-vf-fps` after enabling each mode:
+
+  | Source | Mode | Output |
+  |---|---|---|
+  | 24 fps | 60 fps | 59.9995 |
+  | 25 fps | 60 fps | 60.0000 |
+  | 30 fps | 60 fps | 60.0006 |
+  | 24 fps | double | 47.9996 |
+  | 60 fps | 60 fps | refused with a clear message; playback continues |
+
+- The C++ changes are build-verified by CI only.
+
 ## 2026-09-23 — RIFE 2× activation fix
 
 ### Fixed

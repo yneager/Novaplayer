@@ -16,8 +16,16 @@ class InterpolationController final : public QObject
 public:
     enum class Mode {
         Off,
-        Rife2x
+        RifeDouble, // 2x the source frame rate
+        Rife60      // 60 fps output (sources below 60 fps only)
     };
+
+    // Source frame rate snapped to the nearest standard rate (23.976, 24, 25,
+    // 29.97, 30, 48, 50, 59.94, 60) when within 0.5%; 0 when unknown. Mirrors
+    // the logic in rife.vpy so the UI shows the rates RIFE will produce.
+    static double normalizedFps(double containerFps);
+    // True when the 60 fps mode makes sense for this source frame rate.
+    static bool supports60(double normalizedFps);
 
     explicit InterpolationController(mpv_handle *mpv, QObject *parent = nullptr);
 
@@ -49,7 +57,7 @@ private:
     bool checkRuntimeFiles(QString *error) const;
     bool preloadVsScript(QString *error) const;
     static QString vsScriptPath();
-    bool addFilter(QString *error);
+    bool addFilter(Mode mode, QString *error);
     void removeFilter();
     static QString quoted(const QString &value);
 

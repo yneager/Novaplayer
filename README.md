@@ -23,15 +23,21 @@ The portable package contains everything, including the frame-interpolation runt
 - Fullscreen with overlay controls (slide-in/out, auto-hide)
 - Hardware decoding through mpv (`hwdec=auto-safe`)
 - Keyboard: Space, Left/Right, M, F, Esc
-- **Frame Interpolation: Off / RIFE 2×** (see below)
+- **Frame interpolation with RIFE**: original frame rate, double frame rate, or 60 fps (see below)
 
-## Frame interpolation (RIFE 2×)
+## Frame interpolation (RIFE)
 
-The `Frame Interpolation` selector in the control bar offers:
+The `Frame Interpolation` selector in the control bar is labelled with the
+current video's real frame rates, for example for a 24 fps video:
 
-- **Off** (default) – the normal libmpv playback path, no interpolation overhead.
-- **RIFE 2×** – doubles the frame rate with the RIFE v4.6 neural network
+- **Original (24 fps)** (default) – the normal libmpv playback path, no interpolation overhead.
+- **48 fps (RIFE)** – doubles the frame rate with the RIFE v4.6 neural network
   (23.976 → 47.952, 24 → 48, 25 → 50, 30 → 60, 60 → 120).
+- **60 fps (RIFE)** – interpolates to 60 fps (24 → 60, 25 → 60, 30 → 60).
+  Only available for videos below 60 fps.
+
+Before a file is loaded the entries read "Original", "Double frame rate (RIFE)"
+and "60 fps (RIFE)".
 
 How it works: `media file → libmpv decode → mpv vapoursynth video filter →
 VapourSynth → VapourSynth-RIFE-ncnn-Vulkan (ncnn/Vulkan) → libmpv rendering`.
@@ -44,7 +50,7 @@ driver, and enough GPU performance for the video's resolution. If the runtime,
 GPU or driver is unavailable, NovaPlayer shows a message, switches back to Off
 and playback continues normally.
 
-Not included yet (planned as later milestones): target-FPS modes, display-Hz
+Not included yet (planned as later milestones): other target frame rates, display-Hz
 matching, GPU/model selection, quality presets, upscaling, settings persistence.
 
 ## Third-party components

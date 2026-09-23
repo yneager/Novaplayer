@@ -4,14 +4,18 @@
 #include <QStringList>
 #include <mpv/client.h>
 
-class QWidget;
-class QPushButton;
-class QSlider;
-class QLabel;
 class QComboBox;
 class QDragEnterEvent;
 class QDropEvent;
+class QEvent;
+class QGraphicsOpacityEffect;
+class QLabel;
 class QKeyEvent;
+class QPropertyAnimation;
+class QPushButton;
+class QSlider;
+class QTimer;
+class QWidget;
 
 class MainWindow final : public QMainWindow
 {
@@ -27,6 +31,7 @@ signals:
     void mpvWakeup();
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
@@ -47,6 +52,8 @@ private:
     void buildUi();
     void initMpv();
     void handleEvent(mpv_event *event);
+    void showFullscreenControls();
+    void hideFullscreenControls();
     void setMpvPropertyFlag(const char *name, bool value);
     void setMpvPropertyDouble(const char *name, double value);
     void command(const QStringList &args);
@@ -55,6 +62,7 @@ private:
 
     mpv_handle *mpv_ = nullptr;
     QWidget *video_ = nullptr;
+    QWidget *controls_ = nullptr;
     QPushButton *playButton_ = nullptr;
     QPushButton *muteButton_ = nullptr;
     QPushButton *fullscreenButton_ = nullptr;
@@ -62,6 +70,9 @@ private:
     QSlider *volume_ = nullptr;
     QLabel *timeLabel_ = nullptr;
     QComboBox *speed_ = nullptr;
+    QTimer *fullscreenControlsTimer_ = nullptr;
+    QGraphicsOpacityEffect *controlsOpacity_ = nullptr;
+    QPropertyAnimation *controlsFade_ = nullptr;
     double position_ = 0.0;
     double duration_ = 0.0;
     bool paused_ = false;

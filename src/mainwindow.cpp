@@ -1,36 +1,443 @@
 #include "mainwindow.h"
+
+#include <QApplication>
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMimeData>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QSlider>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
+
 #include <stdexcept>
 #include <vector>
-MainWindow::MainWindow(QWidget *p):QMainWindow(p){setWindowTitle("NovaPlayer");setAcceptDrops(true);buildUi();initMpv();connect(this,&MainWindow::mpvWakeup,this,&MainWindow::processMpvEvents,Qt::QueuedConnection);}
-MainWindow::~MainWindow(){if(mpv_){mpv_set_wakeup_callback(mpv_,nullptr,nullptr);mpv_terminate_destroy(mpv_);}}
-void MainWindow::buildUi(){auto*r=new QWidget(this);auto*l=new QVBoxLayout(r);l->setContentsMargins(0,0,0,10);l->setSpacing(8);video_=new QWidget(r);video_->setAttribute(Qt::WA_NativeWindow);video_->setAttribute(Qt::WA_DontCreateNativeAncestors);video_->setStyleSheet("background:black;");video_->setMinimumSize(640,360);l->addWidget(video_,1);seek_=new QSlider(Qt::Horizontal,r);seek_->setRange(0,1000);connect(seek_,&QSlider::sliderPressed,this,[this]{seeking_=true;});connect(seek_,&QSlider::sliderReleased,this,&MainWindow::seekReleased);l->addWidget(seek_);auto*c=new QHBoxLayout;c->setContentsMargins(10,0,10,0);auto*o=new QPushButton("Open",r);playButton_=new QPushButton("Play",r);muteButton_=new QPushButton("Mute",r);fullscreenButton_=new QPushButton("Fullscreen",r);timeLabel_=new QLabel("00:00 / 00:00",r);volume_=new QSlider(Qt::Horizontal,r);volume_->setRange(0,100);volume_->setValue(80);volume_->setMaximumWidth(140);speed_=new QComboBox(r);speed_->addItems({"0.50x","0.75x","1.00x","1.25x","1.50x","2.00x"});speed_->setCurrentIndex(2);c->addWidget(o);c->addWidget(playButton_);c->addWidget(timeLabel_);c->addStretch();c->addWidget(new QLabel("Speed",r));c->addWidget(speed_);c->addWidget(muteButton_);c->addWidget(volume_);c->addWidget(fullscreenButton_);l->addLayout(c);setCentralWidget(r);connect(o,&QPushButton::clicked,this,&MainWindow::openFile);connect(playButton_,&QPushButton::clicked,this,&MainWindow::togglePause);connect(muteButton_,&QPushButton::clicked,this,&MainWindow::toggleMute);connect(fullscreenButton_,&QPushButton::clicked,this,&MainWindow::toggleFullscreen);connect(volume_,&QSlider::valueChanged,this,&MainWindow::volumeChanged);connect(speed_,&QComboBox::currentIndexChanged,this,&MainWindow::speedChanged);}
-void MainWindow::initMpv(){mpv_=mpv_create();if(!mpv_)throw std::runtime_error("Could not create libmpv context.");int64_t wid=static_cast<int64_t>(video_->winId());mpv_set_option(mpv_,"wid",MPV_FORMAT_INT64,&wid);mpv_set_option_string(mpv_,"hwdec","auto-safe");mpv_set_option_string(mpv_,"keep-open","yes");mpv_set_option_string(mpv_,"osc","no");mpv_set_option_string(mpv_,"input-default-bindings","no");if(mpv_initialize(mpv_)<0)throw std::runtime_error("Could not initialize libmpv.");mpv_observe_property(mpv_,1,"time-pos",MPV_FORMAT_DOUBLE);mpv_observe_property(mpv_,2,"duration",MPV_FORMAT_DOUBLE);mpv_observe_property(mpv_,3,"pause",MPV_FORMAT_FLAG);mpv_observe_property(mpv_,4,"mute",MPV_FORMAT_FLAG);mpv_set_wakeup_callback(mpv_,&MainWindow::wakeup,this);setMpvPropertyDouble("volume",80);}
-void MainWindow::wakeup(void*c){emit static_cast<MainWindow*>(c)->mpvWakeup();}
-void MainWindow::processMpvEvents(){if(!mpv_)return;for(;;){auto*e=mpv_wait_event(mpv_,0);if(!e||e->event_id==MPV_EVENT_NONE)break;handleEvent(e);}}
-void MainWindow::handleEvent(mpv_event*e){if(e->event_id==MPV_EVENT_PROPERTY_CHANGE){auto*p=static_cast<mpv_event_property*>(e->data);if(!p||!p->data)return;QString n=QString::fromUtf8(p->name);if(n=="time-pos"&&p->format==MPV_FORMAT_DOUBLE){position_=*static_cast<double*>(p->data);if(!seeking_&&duration_>0)seek_->setValue(int(position_/duration_*1000));updateTimeLabel();}else if(n=="duration"&&p->format==MPV_FORMAT_DOUBLE){duration_=*static_cast<double*>(p->data);updateTimeLabel();}else if(n=="pause"&&p->format==MPV_FORMAT_FLAG){paused_=*static_cast<int*>(p->data)!=0;playButton_->setText(paused_?"Play":"Pause");}else if(n=="mute"&&p->format==MPV_FORMAT_FLAG){muted_=*static_cast<int*>(p->data)!=0;muteButton_->setText(muted_?"Unmute":"Mute");}}else if(e->event_id==MPV_EVENT_FILE_LOADED){paused_=false;playButton_->setText("Pause");}else if(e->event_id==MPV_EVENT_END_FILE)playButton_->setText("Play");}
-void MainWindow::command(const QStringList&a){if(!mpv_)return;std::vector<QByteArray>u;std::vector<const char*>v;for(const auto&x:a)u.push_back(x.toUtf8());for(auto&x:u)v.push_back(x.constData());v.push_back(nullptr);mpv_command_async(mpv_,0,v.data());}
-void MainWindow::openFile(){QString p=QFileDialog::getOpenFileName(this,"Open video",{},"Video files (*.mkv *.mp4 *.avi *.mov *.webm *.m4v *.ts *.mts *.wmv);;All files (*.*)");if(!p.isEmpty())openPath(p);}
-void MainWindow::openPath(const QString&p){command({"loadfile",p,"replace"});setWindowTitle(QString("NovaPlayer — %1").arg(QFileInfo(p).fileName()));}
-void MainWindow::togglePause(){setMpvPropertyFlag("pause",!paused_);}void MainWindow::toggleMute(){setMpvPropertyFlag("mute",!muted_);}
-void MainWindow::toggleFullscreen(){if(isFullScreen()){showNormal();fullscreenButton_->setText("Fullscreen");}else{showFullScreen();fullscreenButton_->setText("Window");}}
-void MainWindow::seekReleased(){seeking_=false;if(duration_<=0)return;double t=duration_*double(seek_->value())/1000;command({"seek",QString::number(t,'f',3),"absolute","exact"});}
-void MainWindow::volumeChanged(int v){setMpvPropertyDouble("volume",v);}void MainWindow::speedChanged(int i){static double s[]={.5,.75,1,1.25,1.5,2};if(i>=0&&i<6)setMpvPropertyDouble("speed",s[i]);}
-void MainWindow::setMpvPropertyFlag(const char*n,bool v){if(!mpv_)return;int x=v;mpv_set_property_async(mpv_,0,n,MPV_FORMAT_FLAG,&x);}void MainWindow::setMpvPropertyDouble(const char*n,double v){if(mpv_)mpv_set_property_async(mpv_,0,n,MPV_FORMAT_DOUBLE,&v);}
-void MainWindow::updateTimeLabel(){timeLabel_->setText(QString("%1 / %2").arg(formatTime(position_),formatTime(duration_)));}
-QString MainWindow::formatTime(double x){if(x<0)x=0;int t=int(x),h=t/3600,m=t%3600/60,s=t%60;return h?QString("%1:%2:%3").arg(h).arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0')):QString("%1:%2").arg(m,2,10,QChar('0')).arg(s,2,10,QChar('0'));}
-void MainWindow::dragEnterEvent(QDragEnterEvent*e){if(e->mimeData()->hasUrls())e->acceptProposedAction();}void MainWindow::dropEvent(QDropEvent*e){auto u=e->mimeData()->urls();if(!u.isEmpty()&&u.first().isLocalFile())openPath(u.first().toLocalFile());}
-void MainWindow::keyPressEvent(QKeyEvent*e){switch(e->key()){case Qt::Key_Space:togglePause();break;case Qt::Key_F:toggleFullscreen();break;case Qt::Key_M:toggleMute();break;case Qt::Key_Right:command({"seek","5","relative"});break;case Qt::Key_Left:command({"seek","-5","relative"});break;default:QMainWindow::keyPressEvent(e);}}
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+{
+    setWindowTitle("NovaPlayer");
+    setAcceptDrops(true);
+
+    buildUi();
+    initMpv();
+
+    connect(this, &MainWindow::mpvWakeup,
+            this, &MainWindow::processMpvEvents,
+            Qt::QueuedConnection);
+
+    qApp->installEventFilter(this);
+}
+
+MainWindow::~MainWindow()
+{
+    qApp->removeEventFilter(this);
+
+    if (mpv_) {
+        mpv_set_wakeup_callback(mpv_, nullptr, nullptr);
+        mpv_terminate_destroy(mpv_);
+    }
+}
+
+void MainWindow::buildUi()
+{
+    auto *root = new QWidget(this);
+    auto *layout = new QVBoxLayout(root);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    video_ = new QWidget(root);
+    video_->setAttribute(Qt::WA_NativeWindow);
+    video_->setAttribute(Qt::WA_DontCreateNativeAncestors);
+    video_->setStyleSheet("background:black;");
+    video_->setMinimumSize(640, 360);
+    video_->setMouseTracking(true);
+    layout->addWidget(video_, 1);
+
+    controls_ = new QWidget(root);
+    auto *controlsLayout = new QVBoxLayout(controls_);
+    controlsLayout->setContentsMargins(10, 6, 10, 10);
+    controlsLayout->setSpacing(6);
+
+    seek_ = new QSlider(Qt::Horizontal, controls_);
+    seek_->setRange(0, 1000);
+    connect(seek_, &QSlider::sliderPressed, this, [this] { seeking_ = true; });
+    connect(seek_, &QSlider::sliderReleased, this, &MainWindow::seekReleased);
+    controlsLayout->addWidget(seek_);
+
+    auto *buttonRow = new QHBoxLayout;
+    buttonRow->setContentsMargins(0, 0, 0, 0);
+
+    auto *openButton = new QPushButton("Open", controls_);
+    playButton_ = new QPushButton("Play", controls_);
+    muteButton_ = new QPushButton("Mute", controls_);
+    fullscreenButton_ = new QPushButton("Fullscreen", controls_);
+    timeLabel_ = new QLabel("00:00 / 00:00", controls_);
+
+    volume_ = new QSlider(Qt::Horizontal, controls_);
+    volume_->setRange(0, 100);
+    volume_->setValue(80);
+    volume_->setMaximumWidth(140);
+
+    speed_ = new QComboBox(controls_);
+    speed_->addItems({"0.50x", "0.75x", "1.00x", "1.25x", "1.50x", "2.00x"});
+    speed_->setCurrentIndex(2);
+
+    buttonRow->addWidget(openButton);
+    buttonRow->addWidget(playButton_);
+    buttonRow->addWidget(timeLabel_);
+    buttonRow->addStretch();
+    buttonRow->addWidget(new QLabel("Speed", controls_));
+    buttonRow->addWidget(speed_);
+    buttonRow->addWidget(muteButton_);
+    buttonRow->addWidget(volume_);
+    buttonRow->addWidget(fullscreenButton_);
+
+    controlsLayout->addLayout(buttonRow);
+    layout->addWidget(controls_);
+
+    setCentralWidget(root);
+
+    connect(openButton, &QPushButton::clicked, this, &MainWindow::openFile);
+    connect(playButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
+    connect(muteButton_, &QPushButton::clicked, this, &MainWindow::toggleMute);
+    connect(fullscreenButton_, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
+    connect(volume_, &QSlider::valueChanged, this, &MainWindow::volumeChanged);
+    connect(speed_, &QComboBox::currentIndexChanged, this, &MainWindow::speedChanged);
+
+    fullscreenControlsTimer_ = new QTimer(this);
+    fullscreenControlsTimer_->setSingleShot(true);
+    fullscreenControlsTimer_->setInterval(1800);
+    connect(fullscreenControlsTimer_, &QTimer::timeout,
+            this, &MainWindow::hideFullscreenControls);
+
+    controlsOpacity_ = new QGraphicsOpacityEffect(controls_);
+    controlsOpacity_->setOpacity(1.0);
+    controls_->setGraphicsEffect(controlsOpacity_);
+
+    controlsFade_ = new QPropertyAnimation(controlsOpacity_, "opacity", this);
+    controlsFade_->setDuration(250);
+    connect(controlsFade_, &QPropertyAnimation::finished, this, [this] {
+        if (isFullScreen() && controlsOpacity_->opacity() < 0.05) {
+            controls_->hide();
+            setCursor(Qt::BlankCursor);
+        }
+    });
+
+    root->setMouseTracking(true);
+    controls_->setMouseTracking(true);
+    for (QWidget *child : root->findChildren<QWidget *>()) {
+        child->setMouseTracking(true);
+    }
+}
+
+void MainWindow::initMpv()
+{
+    mpv_ = mpv_create();
+    if (!mpv_) {
+        throw std::runtime_error("Could not create libmpv context.");
+    }
+
+    int64_t wid = static_cast<int64_t>(video_->winId());
+    mpv_set_option(mpv_, "wid", MPV_FORMAT_INT64, &wid);
+    mpv_set_option_string(mpv_, "hwdec", "auto-safe");
+    mpv_set_option_string(mpv_, "keep-open", "yes");
+    mpv_set_option_string(mpv_, "osc", "no");
+    mpv_set_option_string(mpv_, "input-default-bindings", "no");
+
+    if (mpv_initialize(mpv_) < 0) {
+        throw std::runtime_error("Could not initialize libmpv.");
+    }
+
+    mpv_observe_property(mpv_, 1, "time-pos", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv_, 2, "duration", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv_, 3, "pause", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv_, 4, "mute", MPV_FORMAT_FLAG);
+    mpv_set_wakeup_callback(mpv_, &MainWindow::wakeup, this);
+
+    setMpvPropertyDouble("volume", 80);
+}
+
+void MainWindow::wakeup(void *ctx)
+{
+    emit static_cast<MainWindow *>(ctx)->mpvWakeup();
+}
+
+void MainWindow::processMpvEvents()
+{
+    if (!mpv_) {
+        return;
+    }
+
+    for (;;) {
+        auto *event = mpv_wait_event(mpv_, 0);
+        if (!event || event->event_id == MPV_EVENT_NONE) {
+            break;
+        }
+        handleEvent(event);
+    }
+}
+
+void MainWindow::handleEvent(mpv_event *event)
+{
+    if (event->event_id == MPV_EVENT_PROPERTY_CHANGE) {
+        auto *property = static_cast<mpv_event_property *>(event->data);
+        if (!property || !property->data) {
+            return;
+        }
+
+        const QString name = QString::fromUtf8(property->name);
+
+        if (name == "time-pos" && property->format == MPV_FORMAT_DOUBLE) {
+            position_ = *static_cast<double *>(property->data);
+            if (!seeking_ && duration_ > 0) {
+                seek_->setValue(int(position_ / duration_ * 1000));
+            }
+            updateTimeLabel();
+        } else if (name == "duration" && property->format == MPV_FORMAT_DOUBLE) {
+            duration_ = *static_cast<double *>(property->data);
+            updateTimeLabel();
+        } else if (name == "pause" && property->format == MPV_FORMAT_FLAG) {
+            paused_ = *static_cast<int *>(property->data) != 0;
+            playButton_->setText(paused_ ? "Play" : "Pause");
+        } else if (name == "mute" && property->format == MPV_FORMAT_FLAG) {
+            muted_ = *static_cast<int *>(property->data) != 0;
+            muteButton_->setText(muted_ ? "Unmute" : "Mute");
+        }
+    } else if (event->event_id == MPV_EVENT_FILE_LOADED) {
+        paused_ = false;
+        playButton_->setText("Pause");
+    } else if (event->event_id == MPV_EVENT_END_FILE) {
+        playButton_->setText("Play");
+    }
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (isFullScreen() && event->type() == QEvent::MouseMove) {
+        auto *widget = qobject_cast<QWidget *>(watched);
+        if (widget && (widget == this || isAncestorOf(widget))) {
+            showFullscreenControls();
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::showFullscreenControls()
+{
+    if (!isFullScreen()) {
+        return;
+    }
+
+    controlsFade_->stop();
+    controlsOpacity_->setOpacity(1.0);
+    controls_->show();
+    unsetCursor();
+
+    fullscreenControlsTimer_->start();
+}
+
+void MainWindow::hideFullscreenControls()
+{
+    if (!isFullScreen() || !controls_->isVisible()) {
+        return;
+    }
+
+    controlsFade_->stop();
+    controlsFade_->setStartValue(controlsOpacity_->opacity());
+    controlsFade_->setEndValue(0.0);
+    controlsFade_->start();
+}
+
+void MainWindow::command(const QStringList &args)
+{
+    if (!mpv_) {
+        return;
+    }
+
+    std::vector<QByteArray>utf8;
+    std::vector<const char *>values;
+
+    for (const auto &arg : args) {
+        utf8.push_back(arg.toUtf8());
+    }
+    for (auto &arg : utf8) {
+        values.push_back(arg.constData());
+    }
+    values.push_back(nullptr);
+
+    mpv_command_async(mpv_, 0, values.data());
+}
+
+void MainWindow::openFile()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        "Open video",
+        {},
+        "Video files (*.mkv *.mp4 *.avi *.mov *.webm *.m4v *.ts *.mts *.wmv);;All files (*.*)");
+
+    if (!path.isEmpty()) {
+        openPath(path);
+    }
+}
+
+void MainWindow::openPath(const QString &path)
+{
+    command({"loadfile", path, "replace"});
+    setWindowTitle(QString("NovaPlayer — %1").arg(QFileInfo(path).fileName()));
+}
+
+void MainWindow::togglePause()
+{
+    setMpvPropertyFlag("pause", !paused_);
+}
+
+void MainWindow::toggleMute()
+{
+    setMpvPropertyFlag("mute", !muted_);
+}
+
+void MainWindow::toggleFullscreen()
+{
+    if (isFullScreen()) {
+        fullscreenControlsTimer_->stop();
+        controlsFade_->stop();
+        controlsOpacity_->setOpacity(1.0);
+        controls_->show();
+        unsetCursor();
+
+        showNormal();
+        fullscreenButton_->setText("Fullscreen");
+    } else {
+        showFullScreen();
+        fullscreenButton_->setText("Window");
+        showFullscreenControls();
+    }
+}
+
+void MainWindow::seekReleased()
+{
+    seeking_ = false;
+    if (duration_ <= 0) {
+        return;
+    }
+
+    const double target = duration_ * double(seek_->value()) / 1000.0;
+    command({"seek", QString::number(target, 'f', 3), "absolute", "exact"});
+}
+
+void MainWindow::volumeChanged(int value)
+{
+    setMpvPropertyDouble("volume", value);
+}
+
+void MainWindow::speedChanged(int index)
+{
+    static double speeds[] = {0.5, 0.75, 1.0, 1.25, 1.5, 2.0};
+    if (index >= 0 && index < 6) {
+        setMpvPropertyDouble("speed", speeds[index]);
+    }
+}
+
+void MainWindow::setMpvPropertyFlag(const char *name, bool value)
+{
+    if (!mpv_) {
+        return;
+    }
+
+    int flag = value;
+    mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_FLAG, &flag);
+}
+
+void MainWindow::setMpvPropertyDouble(const char *name, double value)
+{
+    if (mpv_) {
+        mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_DOUBLE, &value);
+    }
+}
+
+void MainWindow::updateTimeLabel()
+{
+    timeLabel_->setText(QString("%1 / %2")
+                            .arg(formatTime(position_), formatTime(duration_)));
+}
+
+QString MainWindow::formatTime(double seconds)
+{
+    if (seconds < 0) {
+        seconds = 0;
+    }
+
+    const int total = int(seconds);
+    const int hours = total / 3600;
+    const int minutes = total % 3600 / 60;
+    const int secs = total % 60;
+
+    if (hours) {
+        return QString("%1:%2:%3")
+            .arg(hours)
+            .arg(minutes, 2, 10, QChar('0'))
+            .arg(secs, 2, 10, QChar('0'));
+    }
+
+    return QString("%1:%2")
+        .arg(minutes, 2, 10, QChar('0'))
+        .arg(secs, 2, 10, QChar('0'));
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+    }
+}
+
+void MainWindow::dropEvent(QDropEvent *event)
+{
+    const auto urls = event->mimeData()->urls();
+    if (!urls.isEmpty() && urls.first().isLocalFile()) {
+        openPath(urls.first().toLocalFile());
+    }
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key()) {
+    case Qt::Key_Space:
+        togglePause();
+        break;
+    case Qt::Key_F:
+        toggleFullscreen();
+        break;
+    case Qt::Key_Escape:
+        if (isFullScreen()) {
+            toggleFullscreen();
+        } else {
+            QMainWindow::keyPressEvent(event);
+        }
+        break;
+    case Qt::Key_M:
+        toggleMute();
+        break;
+    case Qt::Key_Right:
+        command({"seek", "5", "relative"});
+        break;
+    case Qt::Key_Left:
+        command({"seek", "-5", "relative"});
+        break;
+    default:
+        QMainWindow::keyPressEvent(event);
+    }
+}

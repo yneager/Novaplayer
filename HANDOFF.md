@@ -2,172 +2,141 @@
 
 ## Last Updated
 - Date: 2026-09-23
-- Model/Agent: GPT-5.6 Sol
+- Model/Agent: Claude (claude-fable-5-1 / claude-opus-5-5)
 - Branch: `main`
-- Latest code commit: `3314ef130cc42cbc3f86fbee60ab6efc9a64f05b` — `Fix MKV seeking and subtitle selection`
+- Previous code commit: `3314ef130cc42cbc3f86fbee60ab6efc9a64f05b` — `Fix MKV seeking and subtitle selection`
+- This commit: "Add optional RIFE 2× frame interpolation via mpv VapourSynth filter" (see `git log`; CI run number is reported in the session summary and should be recorded by the next agent after checking Actions)
 
 ## Project Summary
-NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the application window and controls, while libmpv is embedded into a native Qt video widget and provides media playback, codec support, hardware decoding, timing, audio, and subtitle handling.
+NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the window and controls; libmpv is embedded into a native Qt widget (`wid`) and does decoding, rendering, timing, audio and subtitles.
 
-The repository currently targets a portable Windows x64 build. GitHub Actions installs Qt, downloads a current Windows libmpv development package, generates an MSVC import library for libmpv, builds the Release executable, runs `windeployqt`, and uploads a `NovaPlayer-Windows-x64` artifact.
+The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
+
+## Runtime Verification Of The Base Player (user-confirmed)
+The user manually tested the build of commit `3314ef13` (Actions run #10) and confirmed these work correctly:
+
+- video playback
+- MKV seeking (progress-bar click, progress-bar drag, Left/Right ±5 s)
+- embedded subtitles (selection and visible rendering)
+- external subtitles
+- multiple audio tracks
+- fullscreen overlay controls (slide-up animation, auto-hide)
+
+These are the "do not break" baseline for all further work.
 
 ## Current State
-The current `main` branch contains a functional single-window player implementation with:
+Everything from the base player above, plus:
 
-- Local file opening through a file dialog.
-- Drag-and-drop loading of local media.
-- Optional media path loading from the first command-line argument.
-- Play/pause.
-- Absolute seeking through dragging or clicking the seek slider, plus relative ±5 second keyboard seeking even when a child control has focus.
-- Current-position and duration display.
-- Volume and mute controls.
-- Playback speed choices from 0.50x through 2.00x.
-- Fullscreen mode.
-- Fullscreen controls implemented as an overlay so showing the controls does not resize the video area.
-- Animated fullscreen control slide-in/slide-out with automatic hiding and cursor hiding.
-- Audio track selection populated from mpv's `track-list` and applied through the runtime `aid` property.
-- Subtitle track selection, including an Off option, applied through the runtime `sid` property.
-- Subtitle visibility is explicitly enabled when a subtitle is selected; embedded Matroska fonts and MKV subtitle preroll are enabled in mpv setup.
-- Loading external subtitle files and selecting them through mpv.
-- Hardware decoding requested through mpv with `hwdec=auto-safe`.
-- A dark Qt Fusion-based UI.
-- Windows portable packaging through GitHub Actions.
+- **Frame Interpolation: Off | RIFE 2×** combo box in the track row of the control bar. Default Off.
+- RIFE 2× = mpv's built-in `vapoursynth` video filter running `rife/rife.vpy`, which calls the existing VapourSynth-RIFE-ncnn-Vulkan plugin (RIFE v4.6, ncnn/Vulkan). NovaPlayer contains no decoding, rendering or inference code.
+- Portable runtime (embedded Python + VapourSynth + plugin + model) is assembled by CI from pinned, SHA-256-verified downloads.
 
-The current source code is newer than the README/CMake version label: `README.md` and `CMakeLists.txt` still identify the project as v0.1 even though audio/subtitle controls were added afterward.
+### Pipeline
+`media file → libmpv decode → mpv vapoursynth filter (@novarife) → VapourSynth R80 → misc.SCDetect → YUV→RGBS → rife.RIFE(factor 2/1, sc=True, v4.6) → RGBS→source YUV format → libmpv rendering (subtitles/OSD drawn afterwards by mpv) → NovaPlayer video widget`
 
-## Recently Completed
-Recent commits on `main`, newest first:
+### How the filter is added/removed
+`InterpolationController` (`src/interpolationcontroller.{h,cpp}`):
+1. Checks that `rife/rife.vpy`, `rife/librife_windows_x86-64.dll`, `rife/MiscFilters.dll`, `rife/models/rife-v4.6_ensembleFalse/flownet.{bin,param}`, `vapoursynth/python.exe`, `vapoursynth/python3.dll` and `vapoursynth/Lib/site-packages/vapoursynth/vsscript.dll` exist next to `NovaPlayer.exe`.
+2. Sets `VSSCRIPT_PATH` to the bundled `vsscript.dll` (`_wputenv_s`; libmpv shares the UCRT so its `getenv` sees it).
+3. Runs `vf add @novarife:vapoursynth=file=%N%<rife.vpy>:user-data=%N%<rife dir>` (mpv `%len%` quoting because Windows paths contain `:`).
+4. Off runs `vf remove @novarife` — only that label; unrelated filters are never cleared.
 
-- `3314ef13` — fixed MKV seeking and subtitle selection/rendering setup: corrected the seek flag syntax, added click-to-seek, made playback hotkeys work despite focused child controls, set audio/subtitle tracks via mpv properties, explicitly enabled subtitle visibility/embedded fonts, and enabled MKV subtitle preroll.
-- `027178e0` — added the explicit `QByteArray` include required by the track-property helper declarations.
-- `1b1fcc5a` — added audio track selection, subtitle selection, and external subtitle loading.
-- `7b26d108` — changed fullscreen controls into an overlay with slide animation so they no longer resize the video.
-- `a5ae10f3` — improved fullscreen control visibility and video sizing behavior.
-- `a4c502e9` — fixed Qt AUTOMOC detection for `MainWindow`.
-- `438de63d` / `ded3dcc4` — earlier Qt MOC/AUTOMOC build fixes.
-- `380ab362` / `ac2c3f3f` — added the Windows portable GitHub Actions workflow and the libmpv MSVC import-library helper.
-- Earlier commits added the Qt/libmpv player source, CMake configuration, and initial README.
+Failure handling:
+- Missing files → error dialog, combo reverts to Off, no filter added.
+- `vf add` fails synchronously (e.g. VSScript cannot load) → mpv does not add the filter; error dialog, Off.
+- Script/plugin fails when video reaches it (missing model, no Vulkan GPU, Python exception) → mpv logs `Disabling filter novarife because it has failed.` and passes video through unfiltered. NovaPlayer requests error-level mpv log messages, detects that line, removes `@novarife`, reverts the combo to Off and shows the Python exception text.
 
-The latest code commit, `3314ef13`, completed GitHub Actions run #10 (`35877741037`) successfully using the `Build Windows Portable` workflow.
+## Verification Status
 
-## Work In Progress
-- The recent MKV seeking and subtitle-selection fixes build successfully, but runtime confirmation with the user's multi-audio/multi-subtitle MKV is still pending. The repository has no automated runtime/video-rendering tests.
-- Project documentation/version metadata has not caught up with the latest implementation: the README title and CMake project version still say v0.1.
-- No TODO/FIXME/XXX markers were found in the tracked source during this review.
+### Verified: libmpv VapourSynth support (dependency audit)
+- The workflow previously downloaded `shinchiro/mpv-winbuild-cmake` **latest**. It is now pinned to release `20260923`, asset `mpv-dev-x86_64-20260923-git-6fd80b2003.7z`, SHA-256 `372F29C292D0C8B4CE916225739E5872E35B8E11F3F4590C285BAED8BA551100`.
+- `libmpv-2.dll` from that exact archive was inspected: it contains the build configuration string `-Dvapoursynth=enabled`, the feature list includes `vapoursynth`, and it contains the filter strings `VapourSynth bridge`, `VSScript.dll`, `getVSScriptAPI`, `buffered-frames`, `video_in`, `container_fps`. No dependency change was needed.
+- The same release's `mpv.exe` (`mpv-x86_64-20260923-git-6fd80b2003.7z`, SHA-256 `A2FC7178EE5D49869B7719E907ED402D6191E27167D4631FF9AA2592910632AA`, mpv v0.41.0-1055-g6fd80b200) is built from the same source and lists `vapoursynth  VapourSynth bridge` in `--vf=help`. It was used as the runtime test vehicle below.
+- mpv source (`video/filter/vf_vapoursynth.c`): on Windows it `dlopen`s `$VSSCRIPT_PATH`, else `VSScript.dll`; the script is reloaded on every seek; output timing comes from `_DurationNum/_DurationDen`, which the RIFE plugin halves for factor 2.
 
-RIFE frame interpolation and realtime upscaling are mentioned in `README.md` as future work, but there are currently no RIFE/upscaling source files or dependencies in the repository.
+### Runtime-verified locally (mpv.exe from the pinned build + the exact pinned runtime, Windows 11, AMD Radeon RX 9070 XT, driver 32.0.31041.1004)
+Driven over mpv's JSON IPC with the same `vf add/remove @novarife` commands NovaPlayer issues, and the runtime laid out exactly as the CI script assembles it:
 
-## Next Recommended Tasks
-1. Manually verify commit `3314ef13` on Windows with the reported MKV: seek by clicking/dragging the bar, test Left/Right while controls are focused, switch both audio tracks, and switch several embedded subtitle tracks to confirm text/image subtitles render.
-2. Update `README.md` and the CMake project version after the current playback/track behavior is runtime-verified.
-3. Add RIFE frame interpolation as an isolated, optional playback enhancement, preserving the existing libmpv playback path when interpolation is disabled.
-4. Add realtime upscaling after the interpolation path is stable, then add automated tests/testable abstractions as the codebase grows.
-
-## Known Issues / Bugs
-The user reported two runtime issues after the initial track-selector build: seek/skip did not work as expected on an MKV, and embedded subtitles were not visibly rendering. Commit `3314ef13` contains fixes for both and passes CI, but runtime confirmation on the reported MKV is still pending.
-
-Verified project-state issues/gaps:
-
-- `README.md` still says `NovaPlayer v0.1` and does not mention the newly implemented audio/subtitle controls.
-- `CMakeLists.txt` still declares project version `0.1.0`.
-- There is no automated test suite, lint job, or static-analysis job in the repository.
-- The repository has no checked-in local-development dependency manager or vendored Qt/libmpv dependencies; local builds require those dependencies to be supplied externally.
-
-## Tests / Verification
-### Automated tests
-No test files, test directories, CTest configuration, or other automated test framework were found in the tracked repository.
+| Check | Result |
+|---|---|
+| 24 fps H.264 720p, RIFE 2× | `estimated-vf-fps` 24.02 → **47.9996** |
+| 30 fps H.264 720p, RIFE 2× | 30.03 → **60.0006** |
+| Generated frames | screenshot shows the on-frame counter blended between two source frames (true synthesized frame, not duplication / display interpolation) |
+| `hwdec=auto-safe` (d3d11va) with RIFE | works: mpv's autoconvert inserts `HW-downloading from d3d11` + `nv12 -> yuv420p` automatically; `hwdec-current` stays `d3d11va` → **NovaPlayer keeps `auto-safe`, no hwdec change needed** |
+| `hwdec=no` with RIFE | works |
+| Seek (absolute+exact) while active | works; script reloads on seek as documented, stays at 48 fps |
+| Pause / resume while active | works |
+| `vf remove @novarife` | back to 24 fps and `d3d11` direct HW output (normal path restored) |
+| Remove then re-add | works |
+| External SRT subtitle while active | rendered crisply on top of the interpolated video (subtitles are not passed through RIFE) |
+| VSScript not loadable | `vf add` returns error, filter not added, playback continues |
+| Script error (plugin path) / missing model | mpv logs Python exception, disables `novarife`, playback continues unfiltered |
+| `resources/rife/rife.vpy` | compiles with the bundled Python 3.12.10 |
+| `.github/scripts/assemble-rife-runtime.ps1` | ran locally: all 6 downloads SHA-256 verified, layout correct, runtime ≈ 51 MB |
 
 ### Build verification
-The latest reviewed code commit before this documentation change was:
+- Pushed with this commit; the `Build Windows Portable` run for it must be checked. NovaPlayer's C++ changes were **not** compiled locally (no Qt/MSVC on the agent machine). If CI fails, fix it before anything else.
 
-- Commit: `3314ef130cc42cbc3f86fbee60ab6efc9a64f05b`
-- GitHub Actions workflow: `Build Windows Portable`
-- Run: #10 / `35877741037`
-- Result: **success**
-- Verified stages: checkout, Qt installation, libmpv download, import-library generation, CMake configure, Release build, portable packaging, and artifact upload.
+### NOT yet verified (needs the user with the CI artifact)
+- `NovaPlayer.exe` itself with RIFE 2× selected (UI path, env var hand-off to libmpv, error dialogs).
+- Progress-bar click/drag and Left/Right seeking in NovaPlayer with RIFE on.
+- Embedded MKV subtitles, audio-track switching, mute/volume and A/V sync over a long playback with RIFE on.
+- Fullscreen overlay slide/auto-hide with RIFE on.
+- NVIDIA and Intel GPUs; low-end GPUs / 1080p–4K real-time performance (only 720p on an RX 9070 XT was tested).
+- Running on a clean PC without the VC++ redistributable (the workflow now bundles the MSVC runtime DLLs app-locally for this).
+- HDR / 10-bit content: the script converts using the source matrix and returns the source pixel format, but no transfer-function handling is done in the RGB step; HDR (PQ/HLG) through RIFE is **unverified and not claimed as supported**. Selecting Off gives normal HDR playback.
 
-The workflow's effective build commands are:
+## Pinned Third-Party Versions
+| Component | Pin | SHA-256 |
+|---|---|---|
+| libmpv (shinchiro) | `20260923` / `mpv-dev-x86_64-20260923-git-6fd80b2003.7z` | `372F29C292D0C8B4CE916225739E5872E35B8E11F3F4590C285BAED8BA551100` |
+| Python embeddable | 3.12.10 | `4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3` |
+| VapourSynth | R80 `VapourSynth64-Portable-R80.zip` | `5D927152D9DB29D104C8960BF44D0DF7777835F7741D310184BFAE6FDA2F4F22` |
+| VapourSynth-RIFE-ncnn-Vulkan | `r9_mod_v33` (commit `c3ec6aabc07c8fa37a4f58d7fed9e2ad1fc1b13f`) `librife_windows_x86-64.dll` | `36A25B471BE88E6F915320C818022DC8657DD9BEAC22A8C3158BD7F4260CC410` |
+| RIFE v4.6 model `rife-v4.6_ensembleFalse/flownet.bin` | plugin commit above | `03393CF14FE6D0AF015D24D93BAE1E5925F2828CB3B6555300A132643C617AA5` |
+| `…/flownet.param` | plugin commit above | `AE9B08AF43FBA97E27AA2C40C04C35B1A75F637B2D2B01A941FA94361AB25CBD` |
+| vs-miscfilters-obsolete | R2 `miscfilters-r2.7z` | `54CF54C4D66151C01C1C663ED0D47CA99C7F1B0A94927BD99B35362C02172BD2` |
 
-```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMPV_INCLUDE_DIR="<libmpv include root>" -DMPV_LIBRARY="<path to mpv.lib>"
-cmake --build build --config Release --parallel
-```
+Model identifier: the plugin's model index 23 = `rife-v4.6 (ensemble=False)` maps to folder `models/rife-v4.6_ensembleFalse` in this plugin version (verified in the pinned README, the repository tree and the strings in the pinned DLL). The script passes `model_path` explicitly, so no index mapping is relied on.
 
-Packaging then copies `NovaPlayer.exe` and `libmpv-2.dll` and runs Qt's `windeployqt`.
-
-There is no lint or typecheck command configured.
-
-### Repository-status audit note
-The remote branch head and complete tracked tree were verified through the GitHub API. A local `git clone`/ `git status` attempt from the agent execution environment could not reach `github.com` because that shell environment had no DNS/network access. GitHub reports the current/default branch as `main`; the repository does not expose a server-side uncommitted working-tree state.
+GPU selection: not set; the plugin uses `ncnn::get_default_gpu_index()`.
 
 ## Important Files
-- `README.md` — short project overview, Windows artifact instructions, current basic feature list, and the stated future direction toward RIFE/upscaling.
-- `CMakeLists.txt` — C++20/Qt 6/libmpv build definition; enables `CMAKE_AUTOMOC`, locates libmpv, and defines the `NovaPlayer` executable.
-- `src/main.cpp` — QApplication setup, Fusion style/dark stylesheet, initial window sizing, and optional command-line media loading.
-- `src/mainwindow.h` — `MainWindow` interface, Qt slots/signals, mpv handle, playback controls, track selectors, and fullscreen overlay state.
-- `src/mainwindow.cpp` — main application behavior: UI construction, libmpv initialization/event handling, media commands, track enumeration/selection, external subtitles, keyboard input, drag/drop, and fullscreen overlay animation.
-- `.github/workflows/windows-portable.yml` — Windows 2022 CI build and portable packaging workflow; runs on pushes to `main` and manual workflow dispatch.
-- `.github/scripts/make-mpv-lib.ps1` — extracts exports from the downloaded libmpv DLL with `dumpbin`, creates a DEF file, and generates `mpv.lib` with MSVC `lib.exe`.
+- `src/interpolationcontroller.{h,cpp}` — RIFE glue (paths, file checks, `VSSCRIPT_PATH`, `vf add/remove @novarife`, failure detection).
+- `src/mainwindow.{h,cpp}` — UI; interpolation combo, mpv log-message forwarding, error dialog.
+- `resources/rife/rife.vpy` — VapourSynth script (adapted from MIT `Lafourkad/mpv-RIFE`).
+- `.github/scripts/assemble-rife-runtime.ps1` — pinned, hash-verified runtime assembly.
+- `.github/workflows/windows-portable.yml` — build + package (pinned libmpv, MSVC runtime, RIFE runtime).
+- `.github/scripts/make-mpv-lib.ps1` — MSVC import library for libmpv.
+- `THIRD_PARTY_NOTICES.md`, `licenses/` — license documentation (copied into the package).
 
-No tests, migrations, database schema, authentication configuration, or additional documentation files were present before this handoff was added.
-
-## Architecture / Important Decisions
-- **Qt + libmpv split:** Qt implements the desktop UI; libmpv handles playback. The code does not implement its own demuxer/decoder.
-- **Native embedding:** `video_` is forced to a native widget and its `winId()` is passed to mpv through the `wid` option before `mpv_initialize()`.
-- **Hardware decode:** mpv is configured with `hwdec=auto-safe`.
-- **mpv UI/input ownership:** mpv's OSC and default input bindings are disabled; NovaPlayer supplies its own Qt controls and keyboard handling.
-- **Qt-thread event handling:** the mpv wakeup callback emits `mpvWakeup()`; that signal is connected to `processMpvEvents()` with `Qt::QueuedConnection`, keeping event processing on the Qt thread.
-- **Observed mpv properties:** `time-pos`, `duration`, `pause`, and `mute` are observed and reflected in the UI.
-- **Track handling:** after `MPV_EVENT_FILE_LOADED`, the UI queries `track-list/count` and `track-list/<index>/...` properties. Audio changes set the runtime `aid` property; subtitle changes set the runtime `sid` property and explicitly enable `sub-visibility`; external subtitles use `sub-add <path> select`. Embedded fonts and MKV subtitle preroll are enabled during mpv setup.
-- **Fullscreen overlay:** outside fullscreen, controls live in the main vertical layout. Entering fullscreen removes the controls widget from that layout and uses it as a native child overlay with animated geometry. This is specifically intended to prevent the controls from changing the video widget's fullscreen geometry.
-- **Portable CI packaging:** the workflow downloads a shinchiro/mpv-winbuild-cmake development archive, locates the headers/DLL, generates an MSVC import library, builds with Visual Studio 2022 x64, and uses `windeployqt`.
-- **Qt MOC requirement:** `MainWindow` uses `Q_OBJECT`; `CMAKE_AUTOMOC ON` is required. Commit history shows previous linker failures when MOC generation/detection was not correct.
-
-## Environment / Setup Notes
-### Local build requirements
-- Windows x64.
-- Visual Studio 2022 C++ toolchain.
-- CMake 3.21 or newer.
-- Qt 6 Widgets development installation.
-- libmpv development headers and a linkable MSVC import library.
-
-CMake accepts:
-
-- `MPV_ROOT`
-- `MPV_INCLUDE_DIR`
-- `MPV_LIBRARY`
-
-A typical local configure/build is:
-
-```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMPV_INCLUDE_DIR="<path>" -DMPV_LIBRARY="<path>"
-cmake --build build --config Release --parallel
+Portable package layout additions:
+```
+NovaPlayer.exe, libmpv-2.dll, Qt DLLs, msvcp140*.dll/vcruntime140*.dll
+THIRD_PARTY_NOTICES.md, licenses\
+rife\rife.vpy, rife\librife_windows_x86-64.dll, rife\MiscFilters.dll, rife\models\rife-v4.6_ensembleFalse\
+vapoursynth\python.exe, python3.dll, python312.dll, python312.zip, python312._pth (+ "Lib\site-packages")
+vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, vapoursynth.pyd, ...)
 ```
 
-### CI-generated environment variable names
-The Windows workflow uses these generated variables:
-
-- `MPV_INCLUDE_ROOT`
-- `MPV_DLL`
-- `MPV_LIB`
-- `QT_ROOT_DIR`
-
-No repository secrets, API keys, databases, external service credentials, or authentication environment variables were identified.
+## Architecture / Important Decisions
+- Qt + libmpv split and native `wid` embedding are unchanged.
+- Interpolation is only an mpv video filter; no custom decoder/renderer/inference. The filter is labelled so it can be removed without touching other filters.
+- `hwdec=auto-safe` is kept: mpv downloads HW frames automatically when the VapourSynth filter is active, and returns to direct HW output when it is removed (verified). `mpv-RIFE` uses `--hwdec=no`, which was tested and is not needed.
+- mpv's `vapoursynth` filter only accepts planar YUV; the script refuses other input and mpv falls back to unfiltered playback.
+- License choice: only MIT/BSD/LGPL code/binaries are used; `president-not-sure/mpv-interpolation` (GPLv2) was read for ideas only, nothing copied. The bundled libmpv is a GPL build (as before this milestone) — see `THIRD_PARTY_NOTICES.md`.
+- mpv event handling threading model is unchanged (wakeup → queued `processMpvEvents()`); log messages arrive through the same event loop.
 
 ## Do Not Break
-- Keep `Q_OBJECT` in `MainWindow` and keep CMake AUTOMOC enabled. The history contains repeated Qt meta-object linker failures before this was corrected.
-- Do not move mpv event processing directly onto mpv's callback thread. Preserve the wakeup-callback → Qt signal → queued `processMpvEvents()` pattern unless the threading model is deliberately redesigned and tested.
-- Preserve the fullscreen overlay behavior: controls should overlay the video in fullscreen rather than consume layout space and resize the video.
-- Keep seek flags combined in one mpv argument (for example `absolute+exact`). Passing `absolute` and `exact` as separate command arguments was a verified bug in the slider-seek implementation.
-- Be careful when changing native-widget attributes or parentage for `video_` and `controls_`; libmpv is attached to the native `video_` window handle, and fullscreen controls are intentionally raised as a separate native child.
-- Preserve the Windows packaging path unless replaced deliberately: the workflow currently depends on the generated `mpv.lib`, copies the libmpv DLL as `libmpv-2.dll`, and lets `windeployqt` collect Qt runtime dependencies.
-- Do not claim RIFE interpolation or realtime upscaling is implemented until corresponding code/dependencies and verification actually exist; the current repository only mentions them as future work.
+- Keep `Q_OBJECT` + `CMAKE_AUTOMOC` (both `MainWindow` and `InterpolationController` use `Q_OBJECT`).
+- Keep seek flags as one argument (`absolute+exact`).
+- Keep the fullscreen overlay behaviour and the native-widget setup of `video_`/`controls_`.
+- Never clear the whole mpv `vf` chain; only remove `@novarife`.
+- Do not change dependency pins without updating hashes, `THIRD_PARTY_NOTICES.md` and this file.
+- RIFE must stay optional: any failure must leave normal playback working and the combo on Off.
 
-## Notes for the Next AI Agent
-Start by reading this file, then run `git log --oneline -15` and inspect the current `main` diff/tree before changing code.
-
-The latest development area is MKV seek/subtitle reliability. Commit `3314ef13` fixed the known command/property issues and passed CI, but confirm it at runtime on the user's multi-track MKV before treating the fix as fully verified. Bring README/CMake versioning in sync with the code.
-
-After the base player and track controls are verified, the repository's documented next major direction is RIFE frame interpolation, followed by realtime upscaling. Introduce those features incrementally and keep the existing no-enhancement libmpv path working as a fallback.
-
-When making changes on `main`, use the existing GitHub Actions `Build Windows Portable` workflow as the minimum build/package gate and do not report success unless the workflow actually passes.
+## Next Recommended Tasks
+1. Confirm the CI run for this commit passed; download the artifact and runtime-test in `NovaPlayer.exe`: RIFE 2× on a 24 fps and a 30 fps file (use mpv stats / visual smoothness), seek (click, drag, arrows), pause, embedded + external subtitles, audio-track switch, mute/volume, fullscreen overlay, Off → normal playback.
+2. Test the failure path by renaming `rife\models` in the extracted artifact → selecting RIFE 2× should show an error and stay on Off.
+3. Test on NVIDIA and Intel GPUs and on 1080p/4K content; record performance.
+4. Later milestones (not started): target-FPS modes, display-Hz matching, GPU selector, model selector, presets, upscaling, settings persistence.

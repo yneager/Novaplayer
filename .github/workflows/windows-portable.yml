@@ -3,13 +3,27 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    tags:
+      - "v*"
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Verify release tag matches CMake version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(NovaPlayer VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
+            throw "Could not read NovaPlayer version from CMakeLists.txt"
+          }
+          $expected = "v$($Matches[1])"
+          if ($env:GITHUB_REF_NAME -ne $expected) {
+            throw "Tag $env:GITHUB_REF_NAME does not match CMake version $expected"
+          }
       - uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
@@ -102,3 +116,22 @@ jobs:
         with:
           name: NovaPlayer-Windows-x64
           path: portable/
+      - name: Create release archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $archive = "NovaPlayer-Windows-x64-$env:GITHUB_REF_NAME.zip"
+          Compress-Archive -Path portable\* -DestinationPath $archive -Force
+          "RELEASE_ASSET=$archive" | Out-File $env:GITHUB_ENV -Append
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$env:GITHUB_REF_NAME" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:GITHUB_REF_NAME" "$env:RELEASE_ASSET" --clobber
+          } else {
+            gh release create "$env:GITHUB_REF_NAME" "$env:RELEASE_ASSET" --verify-tag --title "NovaPlayer $env:GITHUB_REF_NAME" --generate-notes
+          }

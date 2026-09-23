@@ -1,10 +1,38 @@
 # NovaPlayer
 
-**Current version: v0.2.0**
+**Current version: v0.3.0**
 
 NovaPlayer is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
+
+### v0.3.0 — Vui Application Shell
+
+This milestone turns NovaPlayer into a cohesive Vui-styled desktop application while preserving the existing libmpv and RIFE playback engine.
+
+**Added / Changed**
+- NovaPlayer now launches into a native Vui streaming homepage instead of an empty video surface.
+- Added a floating glass navigation bar, animated cinematic hero, Continue Watching rail, Trending poster rail, editorial Collections and Fresh Transmissions sections based on the current `yneager/Vui` design.
+- Added abstract locally rendered Vui artwork, planet/orb motion, grid/light movement, hover lift/glow treatments and responsive horizontal rails. The interface has no network dependency and does not download Google Fonts or remote artwork.
+- Added an explicit local **Open Video** action, hero Play action and drag/drop flow that all reuse NovaPlayer's existing `openPath()` path.
+- Restored and refined the native Vui player chrome from the earlier UI work while retaining the existing native libmpv `wid` video surface.
+- Added a page architecture around one persistent libmpv instance: Vui Home → Player → Vui Home.
+- Player Home pauses the current item without destroying mpv; the homepage Continue Watching card becomes a session Resume action for the loaded local file.
+- Added a native transition curtain between Home and Player so the transition remains compatible with the Windows native video child window.
+- The player retains real actions for play/pause, playlist-next, volume/mute, accurate seeking, chapters, speed, audio/subtitle selection, external subtitles, fullscreen and RIFE. PiP remains disabled because it is not implemented.
+- Branding remains NovaPlayer, presented as **NOVA / VUI** where appropriate.
+
+**Preserved**
+- libmpv playback, `hwdec=auto-safe`, MKV seek/subtitle fixes, fullscreen overlay auto-hide, audio tracks, external subtitles and all existing RIFE modes/failure fallback.
+- `VSSCRIPT_PATH` is still configured before `mpv_create()`; seeking still uses the combined `absolute+exact` flag; interpolation still removes only `@novarife`.
+
+**Packaging**
+- The Vui shell is implemented with Qt 6 Widgets/custom painting and is compiled into `NovaPlayer.exe`. No Qt WebEngine or extra runtime UI asset directory is required.
+- Windows portable packaging and the pinned libmpv/RIFE runtime remain unchanged.
+
+**Verification status**
+- Source integration preserves the existing playback paths by construction; the Windows portable GitHub Actions build is checked after the commit is pushed.
+- Runtime playback and RIFE behavior still require user/local testing of the produced Windows artifact; CI success alone is not treated as runtime verification.
 
 ### v0.2.0 — RIFE Frame Interpolation
 

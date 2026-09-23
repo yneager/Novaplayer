@@ -12,7 +12,39 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
-## Latest Change: README Version History + Frame-Rate Labels / 60 fps Mode
+## Latest Change: v0.3.0 Vui Application Shell
+
+NovaPlayer now uses the current `yneager/Vui` project as its visual design source while keeping the existing C++20 / Qt 6 Widgets / libmpv / RIFE playback stack.
+
+### Application architecture
+- `MainWindow` owns a `QStackedWidget` with a native `HomePage` and the existing native Player page.
+- Startup shows Home. Opening or dropping a local file transitions to Player and calls the existing `openPath()` / libmpv `loadfile` path.
+- Home pauses playback but does not destroy or recreate mpv. The first Continue Watching card becomes a session Resume action for the currently loaded file.
+- `video_` remains the native libmpv `wid` target. Player chrome remains native sibling widgets above the video HWND.
+- A native transition curtain is used instead of applying graphics effects to the video subtree.
+- Homepage visuals are custom-painted Qt widgets: no WebEngine, remote page load, Google Fonts or network artwork is required.
+
+### Vui home coverage
+- Floating glass NOVA / VUI navigation with Home, Discover, Collections and New anchors.
+- Open Video action plus visual search/notifications/profile slots.
+- Animated cinematic hero with orb/planet, star field, perspective grid, light beams, metadata, Play and More Info.
+- Continue Watching, Trending, Worlds Beyond collections and Fresh Transmissions sections with abstract generated artwork and hover motion.
+- Responsive nav collapse and horizontal drag/scroll rails for smaller desktop sizes.
+
+### Player coverage
+The native Vui player layer is restored/refined around the existing controls: Home, Open, More/settings, side play/audio/captions/fullscreen rail, center play state, timeline, playlist-next, volume, chapter metadata, speed, subtitles, settings, disabled PiP slot and fullscreen.
+
+### Version / packaging
+- Project version: **0.3.0**.
+- New files: `src/homepage.h`, `src/homepage.cpp`.
+- UI is compiled into the executable; Windows packaging needs no WebEngine/resources beyond the existing Qt Widgets deployment.
+- The existing pinned libmpv/RIFE packaging is unchanged.
+
+### Verification status
+- GitHub Actions must compile/package this commit after push.
+- Runtime behavior must still be tested from the Windows artifact; build success is not runtime proof.
+
+## Previous Change: README Version History + Frame-Rate Labels / 60 fps Mode
 The user confirmed the current RIFE integration and interpolation modes are working correctly in `NovaPlayer.exe` after the activation fix below.
 
 The selector now has three entries, labelled with the video's real rates:
@@ -127,7 +159,8 @@ GPU selection: not set; the plugin uses `ncnn::get_default_gpu_index()`.
 
 ## Important Files
 - `src/interpolationcontroller.{h,cpp}` — RIFE glue (paths, file checks, `VSSCRIPT_PATH`, `vf add/remove @novarife`, failure detection).
-- `src/mainwindow.{h,cpp}` — UI; interpolation combo, mpv log-message forwarding, error dialog.
+- `src/homepage.{h,cpp}` — native Vui homepage, generated artwork, home rails and local-file/session-resume actions.
+- `src/mainwindow.{h,cpp}` — application stack + native Vui player UI, playback controls, interpolation combo, mpv log-message forwarding and error dialog.
 - `resources/rife/rife.vpy` — VapourSynth script (adapted from MIT `Lafourkad/mpv-RIFE`).
 - `.github/scripts/assemble-rife-runtime.ps1` — pinned, hash-verified runtime assembly.
 - `.github/workflows/windows-portable.yml` — build + package (pinned libmpv, MSVC runtime, RIFE runtime).
@@ -154,7 +187,8 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 ## Do Not Break
 - Keep `Q_OBJECT` + `CMAKE_AUTOMOC` (both `MainWindow` and `InterpolationController` use `Q_OBJECT`).
 - Keep seek flags as one argument (`absolute+exact`).
-- Keep the fullscreen overlay behaviour and the native-widget setup of `video_`/`controls_`.
+- Keep the Vui Home/Player page architecture and the native-widget setup. `video_` remains the libmpv target; player chrome and the transition curtain must stay compatible with the Windows video HWND.
+- Home must pause the current session without destroying/recreating mpv; drag/drop and Open Video must continue to use `openPath()`.
 - Never clear the whole mpv `vf` chain; only remove `@novarife`.
 - Do not change dependency pins without updating hashes, `THIRD_PARTY_NOTICES.md` and this file.
 - RIFE must stay optional: any failure must leave normal playback working and the combo on Off.

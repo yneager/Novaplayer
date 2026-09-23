@@ -4,10 +4,34 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.3.0** — Vui application shell: animated streaming homepage, persistent Home/Player navigation and restored native Vui player chrome around the existing engine.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
+## 2026-09-23 — v0.3.0 Vui application shell
+
+### Added
+- Native Qt Vui homepage based on the current `yneager/Vui/index.html` and `home.css`: fixed glass navigation, animated hero planet/grid/beams, Continue Watching, Trending, Collections and Fresh Transmissions.
+- `HomePage` custom widgets and painting for offline abstract artwork, hover/elevation transitions and responsive horizontal rails.
+- Persistent Home/Player navigation around one libmpv instance. Returning Home pauses playback; Resume returns to the same loaded media during the current session.
+- Local Open Video actions on the homepage and hero; homepage cards intentionally route to the real local-file workflow rather than pretending to provide a streaming backend.
+- Native transition curtain compatible with the embedded Windows mpv child window.
+
+### Changed
+- Restored the previously developed Vui-native player chrome and integrated it as the Player page instead of replacing the playback backend.
+- Added a Vui Home control to the player and scoped playback keyboard shortcuts to the Player page.
+- Project version bumped to 0.3.0 and CMake now builds `src/homepage.{h,cpp}`.
+- The production interface uses Windows' local Segoe UI family rather than Google Fonts, so the UI remains offline and adds no font package/license dependency.
+
+### Preserved
+- Existing libmpv `wid` embedding, `hwdec=auto-safe`, `absolute+exact` seeking, subtitle/audio switching, fullscreen behavior and RIFE/VapourSynth integration.
+- RIFE continues to add/remove only `@novarife`, and `VSSCRIPT_PATH` remains configured before `mpv_create()`.
+
+### Verification
+- GitHub Actions build verification is performed immediately after push.
+- CI compilation/package success is not claimed as runtime playback verification; MP4/MKV, track controls, fullscreen and RIFE still need Windows artifact testing.
 
 ## 2026-09-23 — Frame-rate labels and 60 fps mode
 

@@ -12,8 +12,8 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
-## Latest Change: Frame-Rate Labels + 60 fps Mode
-The user confirmed that RIFE works in `NovaPlayer.exe` after the activation fix below.
+## Latest Change: README Version History + Frame-Rate Labels / 60 fps Mode
+The user confirmed the current RIFE integration and interpolation modes are working correctly in `NovaPlayer.exe` after the activation fix below.
 
 The selector now has three entries, labelled with the video's real rates:
 - index 0: "Original (N fps)", which is Off;
@@ -101,14 +101,14 @@ Driven over mpv's JSON IPC with the same `vf add/remove @novarife` commands Nova
 ### Build verification
 - Pushed with this commit; the `Build Windows Portable` run for it must be checked. NovaPlayer's C++ changes were **not** compiled locally (no Qt/MSVC on the agent machine). If CI fails, fix it before anything else.
 
-### NOT yet verified (needs the user with the CI artifact)
-- `NovaPlayer.exe` itself with RIFE 2× selected (UI path, env var hand-off to libmpv, error dialogs).
-- Progress-bar click/drag and Left/Right seeking in NovaPlayer with RIFE on.
-- Embedded MKV subtitles, audio-track switching, mute/volume and A/V sync over a long playback with RIFE on.
-- Fullscreen overlay slide/auto-hide with RIFE on.
-- NVIDIA and Intel GPUs; low-end GPUs / 1080p–4K real-time performance (only 720p on an RX 9070 XT was tested).
-- Running on a clean PC without the VC++ redistributable (the workflow now bundles the MSVC runtime DLLs app-locally for this).
-- HDR / 10-bit content: the script converts using the source matrix and returns the source pixel format, but no transfer-function handling is done in the RGB step; HDR (PQ/HLG) through RIFE is **unverified and not claimed as supported**. Selecting Off gives normal HDR playback.
+### User runtime verification
+- The user reported the current NovaPlayer build, including the RIFE integration and current interpolation modes, is working perfectly on their test system.
+- Earlier user verification already covered MKV seeking, embedded/external subtitles, multiple audio tracks and fullscreen overlay behavior.
+
+### Still not broadly verified
+- NVIDIA and Intel GPUs; low-end GPUs / broader 1080p–4K real-time performance (the documented local interpolation harness test was on an AMD RX 9070 XT).
+- Running on a clean PC without the VC++ redistributable, although the workflow bundles the MSVC runtime DLLs app-locally.
+- HDR / 10-bit content: the script converts using the source matrix and returns the source pixel format, but no transfer-function handling is done in the RGB step; HDR (PQ/HLG) through RIFE is **unverified and not claimed as supported**. Selecting Original gives normal HDR playback.
 
 ## Pinned Third-Party Versions
 | Component | Pin | SHA-256 |

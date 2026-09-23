@@ -2,6 +2,13 @@
 
 This file records notable completed work visible in the repository history.
 
+## Version Map
+
+- **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
+- **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
+
+The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
 ## 2026-09-23 — Frame-rate labels and 60 fps mode
 
 ### Added

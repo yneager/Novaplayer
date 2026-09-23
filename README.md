@@ -1,10 +1,15 @@
 # LAMBDA Player
 
-**Current version: v0.2.3**
+**Current version: v0.2.4**
 
 LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
+
+### v0.2.4 — Animated wheel scrolling
+
+- Scrolling the Home page with a mouse wheel now glides smoothly instead of jumping a step per notch. Quick notches add up into one continuous glide.
+- Touchpad scrolling, Ctrl+wheel zoom and Windows' reduced-motion setting behave as before.
 
 ### v0.2.3 — Smoother scrolling
 

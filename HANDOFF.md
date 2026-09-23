@@ -12,7 +12,14 @@ LAMBDA Player is a small Windows desktop video player implemented in C++20 with 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `LAMBDA-Player-Windows-x64`).
 
-## Latest Change: v0.2.3 Smoother Scrolling
+## Latest Change: v0.2.4 Animated Wheel Scrolling
+
+`resources/vui/home.js` → `smoothWheel()` eases the Home page toward the accumulated wheel target.
+- Qt WebEngine forwards Windows wheel notches to Chromium as precise pixel deltas, so `QWebEngineSettings::ScrollAnimatorEnabled` (set in `homepage.cpp`) never animates them.
+- Only notch input (`wheelDeltaY` a multiple of 120, or line/page `deltaMode`) is intercepted. Touchpads, ctrl+wheel, inner vertical scrollers and `prefers-reduced-motion` stay native.
+- Any outside scroll (scrollbar drag, keys, nav `scrollTo`) cancels the animation. Per-frame `scrollTo` uses `behavior: 'instant'` to bypass the CSS `scroll-behavior: smooth`.
+
+## Previous Change: v0.2.3 Smoother Scrolling
 
 `main.cpp` adds `--enable-gpu-rasterization` to `QTWEBENGINE_CHROMIUM_FLAGS` before `QApplication`.
 - On the desktop-OpenGL Qt Quick/WebEngine path (required since v0.2.2), Chromium otherwise rasterizes the Vui pages on the CPU, which made scrolling janky.
@@ -20,7 +27,7 @@ The repository targets a portable Windows x64 build produced by the `Build Windo
 - Check Chromium's GPU feature status with DevTools `SystemInfo.getInfo` (`QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9222`). `rasterization` should read `enabled_force`.
 - If a GPU driver misbehaves, users can set `QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu-rasterization`.
 
-## Previous Change: v0.2.2 Working Video + Frameless Polished UI
+## Earlier Change: v0.2.2 Working Video + Frameless Polished UI
 
 **Video rendering architecture changed. Read this first.**
 - `video_` is now `MpvVideoWidget` (`QOpenGLWidget`) using libmpv's render API (`vo=libmpv`). There is no `wid` and no native child HWND.

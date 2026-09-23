@@ -4,6 +4,7 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.2.4** — animated mouse-wheel scrolling on the Home page (eased instead of jumping per notch).
 - **v0.2.3** — smoother scrolling (GPU rasterization enabled for the Vui WebEngine pages).
 - **v0.2.2** — video visible again (libmpv render API under the Vui web chrome, lost-wakeup fix), frameless rounded window with custom controls, mini player, recent files/resume, polished and fully functional UI.
 - **v0.2.1** — LAMBDA Player identity reset; real Vui HTML/CSS on both Home and Player while preserving the native libmpv/RIFE engine.
@@ -12,7 +13,7 @@ This file records notable completed work visible in the repository history.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
 
-## Unreleased — animated wheel scrolling
+## 2026-09-24 — v0.2.4 animated wheel scrolling
 
 ### Fixed
 - Home-page mouse-wheel scrolling jumped ~100 px per notch instead of animating. Qt WebEngine forwards Windows wheel notches to Chromium as precise pixel deltas, so `ScrollAnimatorEnabled` never takes effect. `home.js` now eases the page toward the accumulated wheel target (frame-rate independent). Touchpads, ctrl+wheel zoom, inner scrollers and `prefers-reduced-motion` keep native behaviour; scrollbar drags, keys and nav links interrupt the animation.

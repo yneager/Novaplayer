@@ -169,6 +169,47 @@
     });
   }
 
+  // Animated mouse-wheel scrolling. Qt WebEngine hands Chromium each Windows
+  // wheel notch as a precise pixel delta, so Chromium's scroll animator never
+  // runs and the page jumps ~100px per notch. Ease toward a target instead.
+  // Touchpads, ctrl+wheel zoom, reduced motion and inner scrollers stay native.
+  function smoothWheel() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const root = document.scrollingElement || document.documentElement;
+    let target = 0, current = 0, frame = 0, last = 0;
+
+    const innerScroller = (el, dy) => {
+      for (; el && el !== document.body && el !== root; el = el.parentElement) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') &&
+            (dy > 0 ? el.scrollTop < el.scrollHeight - el.clientHeight - 1 : el.scrollTop > 0)) return true;
+      }
+      return false;
+    };
+
+    const step = now => {
+      // Someone else moved the page (scrollbar drag, keys, nav links): yield.
+      if (Math.abs(window.scrollY - current) > 2) { frame = 0; return; }
+      const dt = Math.min(64, now - (last || now - 16.7));
+      last = now;
+      current += (target - current) * (1 - Math.pow(0.82, dt / 16.7));
+      if (Math.abs(target - current) < 0.5) current = target;
+      window.scrollTo({top: current, behavior: 'instant'});
+      frame = current === target ? 0 : requestAnimationFrame(step);
+    };
+
+    window.addEventListener('wheel', e => {
+      if (e.ctrlKey || e.defaultPrevented || !e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const notch = e.deltaMode !== 0 || (e.wheelDeltaY && e.wheelDeltaY % 120 === 0);
+      if (!notch || innerScroller(e.target, e.deltaY)) return;
+      e.preventDefault();
+      if (!frame) { target = current = window.scrollY; last = 0; }
+      const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? window.innerHeight : 1;
+      target = Math.max(0, Math.min(root.scrollHeight - window.innerHeight, target + e.deltaY * unit));
+      if (!frame) frame = requestAnimationFrame(step);
+    }, {passive: false});
+  }
+
   window.lambdaHome = {
     setRecents(list) { recents = Array.isArray(list) ? list : []; renderRecents(); renderHeroCta(); },
     setSession(next) { session = Object.assign({available: false, name: '', path: ''}, next || {}); renderRecents(); renderHeroCta(); },
@@ -177,6 +218,7 @@
 
   const start = () => {
     bind();
+    smoothWheel();
     renderRecents();
     renderHeroCta();
     new QWebChannel(qt.webChannelTransport, channel => {

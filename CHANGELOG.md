@@ -12,6 +12,11 @@ This file records notable completed work visible in the repository history.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
 
+## Unreleased — animated wheel scrolling
+
+### Fixed
+- Home-page mouse-wheel scrolling jumped ~100 px per notch instead of animating. Qt WebEngine forwards Windows wheel notches to Chromium as precise pixel deltas, so `ScrollAnimatorEnabled` never takes effect. `home.js` now eases the page toward the accumulated wheel target (frame-rate independent). Touchpads, ctrl+wheel zoom, inner scrollers and `prefers-reduced-motion` keep native behaviour; scrollbar drags, keys and nav links interrupt the animation.
+
 ## 2026-09-24 — v0.2.3 smoother scrolling
 
 ### Fixed

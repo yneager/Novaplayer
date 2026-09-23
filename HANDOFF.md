@@ -12,7 +12,29 @@ LAMBDA Player is a small Windows desktop video player implemented in C++20 with 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `LAMBDA-Player-Windows-x64`).
 
-## Latest Change: v0.2.1 LAMBDA Player / Complete Vui CSS
+## Latest Change: v0.2.2 Working Video + Frameless Polished UI
+
+**Video rendering architecture changed. Read this first.**
+- `video_` is now `MpvVideoWidget` (`QOpenGLWidget`) using libmpv's render API (`vo=libmpv`). There is no `wid` and no native child HWND.
+  - The native-HWND approach cannot work under the transparent WebEngine chrome on Windows.
+  - Do not add `WA_NativeWindow` to any widget in the main window: it breaks Qt's compositing of the GL video and the web layers.
+- `PlayerChrome`'s internal `QQuickWidget` has `WA_AlwaysStackOnTop`, so the chrome is blended over the video.
+- `main.cpp` must keep `AA_ShareOpenGLContexts` and `QQuickWindow::setGraphicsApi(OpenGL)` before `QApplication`.
+- The render context must be freed (`video_->shutdown()`) before `mpv_terminate_destroy()`.
+- The first `loadfile` is deferred (`pendingPath_`) until `renderReady`.
+- The `mpvWakeup` connection must stay **before** `initMpv()`, otherwise the first wakeup is lost and no mpv event is ever processed. That was the "opening a video doesn't work" bug.
+- The window is frameless. `MainWindow::nativeEvent` handles `WM_NCCALCSIZE`, `WM_NCHITTEST` and `WM_NCACTIVATE`, and `applyNativeFrame()` re-adds the frame styles and DWM attributes.
+  - Drag regions come from each page's `[data-drag]` elements via `windowBridge.setDragRegions`.
+  - Use `fullscreenMode_` and `isWindowMaximized()`, not Qt's `isFullScreen()` or `isMaximized()`.
+  - Maximize goes through Win32 `ShowWindow`.
+- Resume and recent files use mpv watch-later files (`watch-later-options=start,aid,sid`) plus `recent/items` in the QSettings INI.
+- Testing aids:
+  - `LAMBDA_DEBUG_GRAB=<dir>` with `<name>.request` files saves an in-app composited capture. Desktop capture cannot read GL content on some drivers.
+  - `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9222` exposes the pages to DevTools.
+  - JS console errors are logged via `qWarning`.
+- Verified locally (see CHANGELOG). The user still needs to confirm the build on their machine, especially the mini player and RIFE.
+
+## Previous Change: v0.2.1 LAMBDA Player / Complete Vui CSS
 
 The active project line is reset to **v0.2.1** and the product is now **LAMBDA Player**.
 

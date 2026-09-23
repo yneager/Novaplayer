@@ -6,15 +6,16 @@
   <meta name="theme-color" content="#050609" />
   <title>LAMBDA Player — Discover</title>
   <link rel="stylesheet" href="./home.css" />
+  <link rel="stylesheet" href="./window.css" />
 </head>
 <body>
   <div class="page-noise"></div>
   <div class="aurora aurora-a"></div>
   <div class="aurora aurora-b"></div>
 
-  <header class="nav-shell">
+  <header class="nav-shell" data-drag>
     <nav class="nav glass">
-      <a class="brand" href="./index.html" aria-label="Vui home">
+      <a class="brand" href="#top" aria-label="Back to top" title="Back to top">
         <span class="brand-mark"><i></i><i></i></span>
         <span>LAMBDA</span>
       </a>
@@ -27,23 +28,23 @@
       </div>
 
       <div class="nav-actions">
-        <button class="round-button search-button" aria-label="Search">
+        <button class="round-button search-button" data-action="open" aria-label="Open video" title="Open a video (Ctrl+O)">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
         </button>
-        <button class="round-button" aria-label="Notifications">
-          <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7M10 20h4"/></svg>
-          <span class="notify-dot"></span>
+        <button class="round-button" data-action="folder" aria-label="Open folder" title="Play a folder of videos">
+          <svg viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.6l2 2.2H18a2.5 2.5 0 0 1 2.5 2.5v7.3A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z"/></svg>
         </button>
-        <button class="profile" aria-label="Profile">
-          <span class="profile-core">M</span>
+        <button class="profile" data-action="about" aria-label="About LAMBDA Player" title="About LAMBDA Player" aria-haspopup="dialog">
+          <span class="profile-core">λ</span>
           <span class="profile-ring"></span>
         </button>
+        <div data-window-controls></div>
       </div>
     </nav>
   </header>
 
   <main>
-    <section class="hero">
+    <section class="hero" id="top">
       <div class="hero-art" aria-hidden="true">
         <div class="planet planet-main"></div>
         <div class="planet planet-small"></div>
@@ -70,9 +71,9 @@
         </div>
 
         <div class="hero-actions">
-          <a class="primary-cta" href="./player.html">
+          <a class="primary-cta" href="./player.html" data-action="resume">
             <span class="play-glyph"></span>
-            Play
+            <span class="primary-cta-label">Play</span>
           </a>
           <a class="secondary-cta glass" href="#featured">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v6m0-9v.2"/></svg>
@@ -147,7 +148,7 @@
           <span class="eyebrow">WHAT EVERYONE IS WATCHING</span>
           <h2>Trending now</h2>
         </div>
-        <div class="rail-controls"><button>←</button><button>→</button></div>
+        <div class="rail-controls" data-rail=".poster-rail"><button type="button" data-dir="-1" aria-label="Scroll left" title="Scroll left">←</button><button type="button" data-dir="1" aria-label="Scroll right" title="Scroll right">→</button></div>
       </div>
 
       <div class="rail poster-rail">
@@ -246,6 +247,10 @@
       </div>
     </section>
   </main>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="./window.js"></script>
+  <script src="./home.js"></script>
 
   <footer>
     <div class="footer-brand"><span class="brand-mark"><i></i><i></i></span><strong>LAMBDA</strong></div>

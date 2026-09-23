@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(LambdaPlayer VERSION 0.2.1 LANGUAGES CXX)
+project(LambdaPlayer VERSION 0.2.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets WebEngineWidgets WebChannel)
+find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets Quick WebEngineWidgets WebChannel)
 
 set(MPV_ROOT "" CACHE PATH "Path to libmpv development package")
 if(NOT MPV_INCLUDE_DIR)
@@ -26,12 +26,16 @@ qt_add_executable(LambdaPlayer WIN32
   src/playerchrome.h
   src/mainwindow.cpp
   src/mainwindow.h
+  src/mpvvideowidget.cpp
+  src/mpvvideowidget.h
+  src/windowbridge.cpp
+  src/windowbridge.h
   src/interpolationcontroller.cpp
   src/interpolationcontroller.h
 )
 
 target_include_directories(LambdaPlayer PRIVATE "${MPV_INCLUDE_DIR}")
-target_link_libraries(LambdaPlayer PRIVATE Qt6::Widgets Qt6::WebEngineWidgets Qt6::WebChannel "${MPV_LIBRARY}")
+target_link_libraries(LambdaPlayer PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Quick Qt6::WebEngineWidgets Qt6::WebChannel "${MPV_LIBRARY}")
 
 set(VUI_RESOURCE_FILES
   resources/vui/index.html
@@ -39,6 +43,9 @@ set(VUI_RESOURCE_FILES
   resources/vui/player.html
   resources/vui/styles.css
   resources/vui/player.js
+  resources/vui/home.js
+  resources/vui/window.js
+  resources/vui/window.css
 )
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/vui/InterVariable.woff2")
   list(APPEND VUI_RESOURCE_FILES resources/vui/InterVariable.woff2)
@@ -50,8 +57,12 @@ qt_add_resources(LambdaPlayer "vui_home"
   FILES ${VUI_RESOURCE_FILES}
 )
 
+target_compile_definitions(LambdaPlayer PRIVATE LAMBDA_VERSION="${PROJECT_VERSION}")
+
 if(WIN32)
   target_compile_definitions(LambdaPlayer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  # dwmapi: rounded corners / shadow for the custom-framed window.
+  target_link_libraries(LambdaPlayer PRIVATE dwmapi)
 endif()
 
 if(MSVC)

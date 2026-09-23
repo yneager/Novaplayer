@@ -1,14 +1,17 @@
 #include "homepage.h"
+#include "windowbridge.h"
 
+#include <QCoreApplication>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QHideEvent>
-#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QMimeData>
 #include <QShowEvent>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWebChannel>
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
 #include <QWebEngineView>
@@ -16,6 +19,33 @@
 #include <functional>
 
 namespace {
+
+// Home page actions exposed to home.js as "homeBridge".
+class HomeBridge final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString version READ version CONSTANT)
+
+public:
+    using QObject::QObject;
+    QString version() const { return QCoreApplication::applicationVersion(); }
+
+signals:
+    void readyRequested();
+    void openVideoRequested();
+    void openFolderRequested();
+    void resumeRequested();
+    void openRecentRequested(const QString &path);
+    void openLicensesRequested();
+
+public slots:
+    void ready() { emit readyRequested(); }
+    void openVideo() { emit openVideoRequested(); }
+    void openFolder() { emit openFolderRequested(); }
+    void resume() { emit resumeRequested(); }
+    void openRecent(const QString &path) { emit openRecentRequested(path); }
+    void openLicenses() { emit openLicensesRequested(); }
+};
 
 class VuiPage final : public QWebEnginePage
 {
@@ -28,6 +58,14 @@ public:
     std::function<bool(const QUrl &)> navigationHandler;
 
 protected:
+    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message,
+                                  int line, const QString &source) override
+    {
+        if (level != InfoMessageLevel) {
+            qWarning().noquote() << "[home]" << source.section('/', -1) << line << message;
+        }
+    }
+
     bool acceptNavigationRequest(const QUrl &url,
                                  NavigationType type,
                                  bool isMainFrame) override
@@ -37,6 +75,7 @@ protected:
             return false;
         }
 
+        // The Home page is local; never navigate the app window to the web.
         if (isMainFrame && (url.scheme() == "http" || url.scheme() == "https")) {
             return false;
         }
@@ -99,8 +138,11 @@ HomePage::HomePage(QWidget *parent)
     view_->settings()->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, true);
     view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
+    view_->settings()->setAttribute(QWebEngineSettings::ShowScrollBars, true);
 
     auto *page = new VuiPage(view_);
+    // Paint the app background while loading instead of Chromium's white.
+    page->setBackgroundColor(QColor("#050609"));
     page->navigationHandler = [this](const QUrl &url) {
         if (url.scheme() == "lambda") {
             if (url.host() == "resume") {
@@ -120,26 +162,84 @@ HomePage::HomePage(QWidget *parent)
     };
     view_->setPage(page);
 
+    auto *bridge = new HomeBridge(this);
+    windowBridge_ = new WindowBridge(this);
+    auto *channel = new QWebChannel(page);
+    channel->registerObject("homeBridge", bridge);
+    channel->registerObject("windowBridge", windowBridge_);
+    page->setWebChannel(channel);
+
+    connect(bridge, &HomeBridge::readyRequested, this, [this] {
+        ready_ = true;
+        pushState();
+    });
+    connect(bridge, &HomeBridge::openVideoRequested, this, &HomePage::openVideoRequested);
+    connect(bridge, &HomeBridge::openFolderRequested, this, &HomePage::openFolderRequested);
+    connect(bridge, &HomeBridge::resumeRequested, this, &HomePage::resumeRequested);
+    connect(bridge, &HomeBridge::openRecentRequested, this, &HomePage::openPathRequested);
+    connect(bridge, &HomeBridge::openLicensesRequested, this, &HomePage::openLicensesRequested);
+
     view->localFileDropped = [this](const QString &path) {
         emit openPathRequested(path);
     };
-
-    connect(view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
-        pageLoaded_ = ok;
-        if (ok) {
-            updateSessionCard();
-        }
-    });
 
     layout->addWidget(view_);
     view_->load(QUrl("qrc:/vui/index.html"));
 }
 
-void HomePage::setCurrentMedia(const QString &displayName, bool available)
+void HomePage::runScript(const QString &script)
+{
+    if (view_ && view_->page() && ready_) {
+        view_->page()->runJavaScript(script);
+    }
+}
+
+void HomePage::setRecents(const QJsonArray &recents)
+{
+    recents_ = recents;
+    pushState();
+}
+
+void HomePage::setCurrentMedia(const QString &displayName, const QString &path, bool available)
 {
     currentMediaName_ = displayName;
+    currentMediaPath_ = path;
     currentMediaAvailable_ = available;
-    updateSessionCard();
+    pushState();
+}
+
+void HomePage::pushState()
+{
+    if (!ready_) {
+        return;
+    }
+    QJsonObject session;
+    session.insert("available", currentMediaAvailable_);
+    session.insert("name", currentMediaName_);
+    session.insert("path", currentMediaPath_);
+    const QString sessionJson = QString::fromUtf8(QJsonDocument(session).toJson(QJsonDocument::Compact));
+    const QString recentsJson = QString::fromUtf8(QJsonDocument(recents_).toJson(QJsonDocument::Compact));
+    runScript(QString("window.lambdaHome&&(lambdaHome.setSession(%1),lambdaHome.setRecents(%2));")
+                  .arg(sessionJson, recentsJson));
+}
+
+void HomePage::toast(const QString &message, bool warning)
+{
+    QJsonArray args;
+    args.append(message);
+    const QString json = QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
+    runScript(QString("window.LambdaWindow&&LambdaWindow.toast(%1[0],'%2');")
+                  .arg(json, warning ? "warn" : "info"));
+}
+
+void HomePage::playLeaveAnimation()
+{
+    runScript("window.LambdaWindow&&LambdaWindow.leave();");
+}
+
+void HomePage::playEnterAnimation()
+{
+    runScript("window.LambdaWindow&&LambdaWindow.enter();");
 }
 
 void HomePage::showEvent(QShowEvent *event)
@@ -152,45 +252,14 @@ void HomePage::showEvent(QShowEvent *event)
 
 void HomePage::hideEvent(QHideEvent *event)
 {
-    if (view_ && view_->page()) {
-        view_->page()->setLifecycleState(QWebEnginePage::LifecycleState::Frozen);
-    }
     QWidget::hideEvent(event);
+    // Freezing must happen after the view is hidden, otherwise Chromium
+    // refuses ("page is visible"). Deferred to the next event loop turn.
+    QMetaObject::invokeMethod(this, [this] {
+        if (!isVisible() && view_ && view_->page()) {
+            view_->page()->setLifecycleState(QWebEnginePage::LifecycleState::Frozen);
+        }
+    }, Qt::QueuedConnection);
 }
 
-void HomePage::updateSessionCard()
-{
-    if (!view_ || !pageLoaded_) {
-        return;
-    }
-
-    QJsonArray jsonName;
-    jsonName.append(currentMediaName_);
-    const QString encodedName =
-        QString::fromUtf8(QJsonDocument(jsonName).toJson(QJsonDocument::Compact));
-
-    const QString script = QString(R"JS(
-(() => {
-  const card = document.querySelector('.continue-rail .wide-card');
-  if (!card) return;
-  const badge = card.querySelector('.card-badge');
-  const title = card.querySelector('.wide-info strong');
-  const meta = card.querySelector('.wide-info div span');
-  if (%1) {
-    const mediaName = %2[0];
-    card.href = 'lambda://resume';
-    if (badge) badge.textContent = 'LOCAL';
-    if (title) title.textContent = mediaName || 'Current video';
-    if (meta) meta.textContent = 'Resume current session';
-  } else {
-    card.href = './player.html';
-    if (badge) badge.textContent = 'S1 · E4';
-    if (title) title.textContent = 'Neon Fields';
-    if (meta) meta.textContent = '31 min left';
-  }
-})()
-)JS")
-        .arg(currentMediaAvailable_ ? "true" : "false", encodedName);
-
-    view_->page()->runJavaScript(script);
-}
+#include "homepage.moc"

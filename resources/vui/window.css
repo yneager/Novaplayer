@@ -1,0 +1,39 @@
+/* LAMBDA Player window chrome shared by the Home and Player pages. */
+
+/* ---- Custom window controls ------------------------------------------- */
+.window-controls{display:flex;align-items:center;gap:3px;margin-left:4px;padding-left:9px;border-left:1px solid rgba(255,255,255,.08)}
+.wc-btn{position:relative;width:34px;height:34px;display:grid;place-items:center;padding:0;border-radius:11px;border:1px solid transparent;background:transparent;color:rgba(245,248,255,.6);cursor:pointer;outline:none;transition:color .22s cubic-bezier(.2,.8,.2,1),background-color .22s cubic-bezier(.2,.8,.2,1),border-color .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s cubic-bezier(.2,.8,.2,1),transform .18s cubic-bezier(.2,.8,.2,1)}
+.wc-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+.wc-btn:hover{color:#fff;background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.1)}
+.wc-btn:active{transform:scale(.9)}
+.wc-max:hover svg{transform:scale(1.08)}
+.wc-close:hover{color:#fff;background:linear-gradient(135deg,#ff7485,#e3485d);border-color:rgba(255,170,180,.45);box-shadow:0 6px 18px rgba(227,72,93,.32)}
+.wc-close:hover svg{transform:rotate(90deg)}
+.wc-btn:focus-visible{border-color:rgba(120,245,231,.55);box-shadow:0 0 0 3px rgba(120,245,231,.14)}
+html.is-fullscreen .window-controls{display:none}
+
+/* ---- Keyboard focus for every interactive element --------------------- */
+button:focus-visible,a:focus-visible{outline:2px solid rgba(120,245,231,.55);outline-offset:2px}
+
+/* ---- Page transitions (opacity only: keeps position:fixed intact) ------ */
+body{transition:opacity .26s cubic-bezier(.2,.8,.2,1)}
+html.lp-leaving body,html.lp-entering body{opacity:0}
+
+/* ---- Themed scrollbars ---------------------------------------------------
+   Thin cyan pill on a transparent track. The right border is thicker so the
+   thumb stays clear of the window's native resize edge. */
+::-webkit-scrollbar{width:14px;height:14px;background:transparent}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{min-height:56px;border:4px solid transparent;border-right-width:5px;border-radius:14px;background-color:rgba(120,245,231,.2);background-clip:padding-box;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+::-webkit-scrollbar-thumb:hover{background-color:rgba(120,245,231,.38)}
+::-webkit-scrollbar-thumb:active{background-color:rgba(146,255,242,.56)}
+::-webkit-scrollbar-button,::-webkit-scrollbar-corner{display:none;width:0;height:0;background:transparent}
+
+/* ---- Toasts ------------------------------------------------------------- */
+.lambda-toasts{position:fixed;z-index:200;left:50%;bottom:clamp(22px,4vh,40px);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:min(560px,calc(100vw - 32px))}
+.lambda-toast{display:flex;align-items:flex-start;gap:10px;max-width:100%;padding:12px 15px;border-radius:15px;color:rgba(247,248,251,.92);font-size:12px;line-height:1.45;background:linear-gradient(180deg,rgba(28,32,44,.94),rgba(14,17,24,.94));border:1px solid rgba(255,255,255,.1);box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px rgba(255,255,255,.06);opacity:0;transform:translateY(14px) scale(.98);transition:opacity .3s cubic-bezier(.2,.8,.2,1),transform .3s cubic-bezier(.2,.8,.2,1);white-space:pre-line}
+.lambda-toast.show{opacity:1;transform:none}
+.lambda-toast::before{content:"";flex:0 0 7px;height:7px;margin-top:5px;border-radius:50%;background:#78f5e7;box-shadow:0 0 10px #78f5e7}
+.lambda-toast.warn::before{background:#ffb35c;box-shadow:0 0 10px #ffb35c}
+
+@media (prefers-reduced-motion:reduce){body,.lambda-toast,.wc-btn,.wc-btn svg{transition-duration:.001ms!important}}

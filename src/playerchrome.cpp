@@ -1,5 +1,7 @@
 #include "playerchrome.h"
+#include "windowbridge.h"
 
+#include <QChildEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QHideEvent>
@@ -35,6 +37,7 @@ signals:
     void subtitleTrackRequested(int index);
     void interpolationRequested(int index);
     void videoRectRequested(int x, int y, int width, int height, int radius);
+    void subtitleInsetRequested(int pixels);
 
 public slots:
     void ready() { emit readyRequested(); }
@@ -49,15 +52,35 @@ public slots:
     {
         emit videoRectRequested(qRound(x), qRound(y), qRound(width), qRound(height), qRound(radius));
     }
+    void reportSubtitleInset(double pixels) { emit subtitleInsetRequested(qRound(pixels)); }
 };
 
 class LambdaWebView final : public QWebEngineView
 {
 public:
-    using QWebEngineView::QWebEngineView;
+    explicit LambdaWebView(QWidget *parent = nullptr)
+        : QWebEngineView(parent)
+    {
+    }
+
     std::function<void(const QString &)> localFileDropped;
 
 protected:
+    // QWebEngineView renders through an internal QQuickWidget. Mark it
+    // WA_AlwaysStackOnTop so Qt composites it last, with alpha blending,
+    // above the OpenGL video widget underneath (documented Qt mechanism for
+    // semi-transparent QQuickWidget/QOpenGLWidget overlays).
+    void childEvent(QChildEvent *event) override
+    {
+        if (event->type() == QEvent::ChildAdded) {
+            if (auto *child = qobject_cast<QWidget *>(event->child());
+                child && child->inherits("QQuickWidget")) {
+                child->setAttribute(Qt::WA_AlwaysStackOnTop);
+            }
+        }
+        QWebEngineView::childEvent(event);
+    }
+
     void dragEnterEvent(QDragEnterEvent *event) override
     {
         const auto urls = event->mimeData()->urls();
@@ -77,6 +100,22 @@ protected:
             return;
         }
         QWebEngineView::dropEvent(event);
+    }
+};
+
+// Forwards JavaScript console errors/warnings to Qt's log (stderr / debugger).
+class ChromePage final : public QWebEnginePage
+{
+public:
+    using QWebEnginePage::QWebEnginePage;
+
+protected:
+    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message,
+                                  int line, const QString &source) override
+    {
+        if (level != InfoMessageLevel) {
+            qWarning().noquote() << "[player.js]" << source.section('/', -1) << line << message;
+        }
     }
 };
 
@@ -111,13 +150,16 @@ PlayerChrome::PlayerChrome(QWidget *parent)
     view_->setAcceptDrops(true);
     view_->setStyleSheet("background:transparent;border:0;");
     view_->setAttribute(Qt::WA_TranslucentBackground);
+    view_->setPage(new ChromePage(view_));
     view_->page()->setBackgroundColor(Qt::transparent);
     view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
 
     auto *bridge = new LambdaBridge(this);
+    windowBridge_ = new WindowBridge(this);
     auto *channel = new QWebChannel(view_->page());
     channel->registerObject("lambdaBridge", bridge);
+    channel->registerObject("windowBridge", windowBridge_);
     view_->page()->setWebChannel(channel);
 
     connect(bridge, &LambdaBridge::readyRequested, this, [this] {
@@ -135,6 +177,7 @@ PlayerChrome::PlayerChrome(QWidget *parent)
         else if (action == "fullscreen") emit fullscreenRequested();
         else if (action == "activity") emit activityRequested();
         else if (action == "load-subtitle") emit loadSubtitleRequested();
+        else if (action == "mini") emit miniRequested();
     });
     connect(bridge, &LambdaBridge::seekRequested, this, &PlayerChrome::seekRequested);
     connect(bridge, &LambdaBridge::volumeRequested, this, &PlayerChrome::volumeRequested);
@@ -143,6 +186,7 @@ PlayerChrome::PlayerChrome(QWidget *parent)
     connect(bridge, &LambdaBridge::subtitleTrackRequested, this, &PlayerChrome::subtitleTrackRequested);
     connect(bridge, &LambdaBridge::interpolationRequested, this, &PlayerChrome::interpolationRequested);
     connect(bridge, &LambdaBridge::videoRectRequested, this, &PlayerChrome::videoRectChanged);
+    connect(bridge, &LambdaBridge::subtitleInsetRequested, this, &PlayerChrome::subtitleInsetChanged);
 
     view->localFileDropped = [this](const QString &path) {
         emit openPathRequested(path);
@@ -160,7 +204,31 @@ void PlayerChrome::setVolume(int volume) { volume_ = qBound(0, volume, 100); pus
 void PlayerChrome::setSpeed(double speed) { speed_ = speed; pushState(); }
 void PlayerChrome::setQuality(const QString &primary, const QString &secondary) { qualityPrimary_ = primary; qualitySecondary_ = secondary; pushState(); }
 void PlayerChrome::setChapter(const QString &index, const QString &title) { chapterIndex_ = index; chapterTitle_ = title; pushState(); }
-void PlayerChrome::setChromeVisible(bool visible) { chromeVisible_ = visible; pushState(); }
+void PlayerChrome::setChromeVisible(bool visible) { if (chromeVisible_ == visible) return; chromeVisible_ = visible; pushState(); }
+void PlayerChrome::setLoading(bool loading) { loading_ = loading; pushState(); }
+void PlayerChrome::setFinished(bool finished) { if (finished_ == finished) return; finished_ = finished; pushState(); }
+void PlayerChrome::setHasNext(bool hasNext) { if (hasNext_ == hasNext) return; hasNext_ = hasNext; pushState(); }
+void PlayerChrome::setBuffered(double seconds) { buffered_ = seconds; }
+
+void PlayerChrome::runScript(const QString &script)
+{
+    if (ready_ && view_ && view_->page()) {
+        view_->page()->runJavaScript(script);
+    }
+}
+
+void PlayerChrome::toast(const QString &message, bool warning)
+{
+    QJsonArray args;
+    args.append(message);
+    const QString json = QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
+    runScript(QString("window.LambdaWindow&&LambdaWindow.toast(%1[0],'%2');")
+                  .arg(json, warning ? "warn" : "info"));
+}
+
+void PlayerChrome::closeSettings() { runScript("window.lambdaUi&&lambdaUi.closeSettings();"); }
+void PlayerChrome::playLeaveAnimation() { runScript("window.LambdaWindow&&LambdaWindow.leave();"); }
+void PlayerChrome::playEnterAnimation() { runScript("window.LambdaWindow&&LambdaWindow.enter();"); }
 
 void PlayerChrome::setSettings(const QStringList &audio, int audioIndex,
                                const QStringList &subtitles, int subtitleIndex,
@@ -194,8 +262,14 @@ void PlayerChrome::showEvent(QShowEvent *event)
 
 void PlayerChrome::hideEvent(QHideEvent *event)
 {
-    setActive(false);
     QWidget::hideEvent(event);
+    // Chromium refuses to freeze a page that is still visible; do it once the
+    // hide has been processed.
+    QMetaObject::invokeMethod(this, [this] {
+        if (!isVisible()) {
+            setActive(false);
+        }
+    }, Qt::QueuedConnection);
 }
 
 void PlayerChrome::pushState()
@@ -203,6 +277,10 @@ void PlayerChrome::pushState()
     if (!ready_ || !view_) return;
     QJsonObject state;
     state.insert("loaded", loaded_);
+    state.insert("loading", loading_);
+    state.insert("finished", finished_);
+    state.insert("hasNext", hasNext_);
+    state.insert("buffered", buffered_);
     state.insert("paused", paused_);
     state.insert("muted", muted_);
     state.insert("chromeVisible", chromeVisible_);

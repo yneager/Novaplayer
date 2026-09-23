@@ -2,8 +2,11 @@
 
 #include <QByteArray>
 #include <QMainWindow>
+#include <QRect>
+#include <QSize>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
 #include <mpv/client.h>
 
 class QComboBox;
@@ -24,6 +27,9 @@ class QWidget;
 class HomePage;
 class PlayerChrome;
 class InterpolationController;
+class MpvVideoWidget;
+class QShowEvent;
+class WindowBridge;
 
 class MainWindow final : public QMainWindow
 {
@@ -44,9 +50,17 @@ protected:
     void dropEvent(QDropEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void changeEvent(QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
     void openFile();
+    void openFolder();
+    void openLicenses();
+    void playNextInFolder();
+    void toggleMiniPlayer();
+    void applyNativeFrame();
     void loadSubtitle();
     void togglePause();
     void toggleMute();
@@ -102,6 +116,34 @@ private:
     void updateTimeLabel();
     void syncChromeSettings();
     void showInterpolationError(const QString &message);
+    void showToast(const QString &message, bool warning = false);
+    void updateSubtitleMargin();
+    bool keyEventOwnerIsThisWindow(QObject *watched) const;
+
+    QString dialogStartDirectory() const;
+    static QStringList videosInFolder(const QString &directory);
+    static QString findNextInFolder(const QString &path);
+    void setAlwaysOnTop(bool onTop);
+
+    void loadRecents();
+    void saveRecents();
+    int recentIndex(const QString &path) const;
+    void addRecent(const QString &path);
+    void removeRecent(const QString &path);
+    void rememberCurrentProgress();
+    void publishRecents();
+
+    WindowBridge *activeWindowBridge() const;
+    void connectWindowBridge(WindowBridge *bridge);
+    void updateWindowState();
+    bool isWindowMaximized() const;
+    void toggleMaximized();
+    void maximizeWindow();
+
+    static constexpr QSize kMinimumWindowSize{760, 480};
+    static constexpr QSize kMiniMinimumSize{320, 180};
+    static constexpr int kResizeBorder = 6;   // logical px
+    static constexpr int kMaxRecents = 12;
 
     static QString formatTime(double seconds);
     static QString formatFps(double fps);
@@ -114,11 +156,12 @@ private:
     HomePage *homePage_ = nullptr;
     PlayerChrome *playerChrome_ = nullptr;
     QWidget *root_ = nullptr;
-    QWidget *transitionOverlay_ = nullptr;
-    QSequentialAnimationGroup *pageTransition_ = nullptr;
+    QTimer *transitionTimer_ = nullptr;
+    QWidget *transitionTarget_ = nullptr;
 
-    QWidget *video_ = nullptr;
+    MpvVideoWidget *video_ = nullptr;
     QVBoxLayout *mainLayout_ = nullptr;
+    QString pendingPath_;
 
     QWidget *topBar_ = nullptr;
     QWidget *sideRail_ = nullptr;
@@ -159,6 +202,16 @@ private:
     QPropertyAnimation *controlsSlide_ = nullptr;
 
     QString currentPath_;
+    QString nextPath_;
+    QVariantList recents_;
+    QRect miniRestoreGeometry_;
+    bool miniMode_ = false;
+    bool fullscreenMode_ = false;
+    bool miniRestoreMaximized_ = false;
+    bool maximizedBeforeFullscreen_ = false;
+    bool eofReached_ = false;
+    int subtitleInset_ = 0;
+    int lastSubtitleMargin_ = -1;
     int controlsHeight_ = 0;
     double position_ = 0.0;
     double duration_ = 0.0;

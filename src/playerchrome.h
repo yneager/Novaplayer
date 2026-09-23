@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class QWebEngineView;
+class WindowBridge;
 
 class PlayerChrome final : public QWidget
 {
@@ -13,6 +14,17 @@ class PlayerChrome final : public QWidget
 
 public:
     explicit PlayerChrome(QWidget *parent = nullptr);
+
+    WindowBridge *windowBridge() const { return windowBridge_; }
+
+    void setLoading(bool loading);
+    void setFinished(bool finished);
+    void setHasNext(bool hasNext);
+    void setBuffered(double seconds);
+    void toast(const QString &message, bool warning = false);
+    void closeSettings();
+    void playLeaveAnimation();
+    void playEnterAnimation();
 
     void setMediaLoaded(bool loaded);
     void setMediaTitle(const QString &title, const QString &eyebrow);
@@ -40,6 +52,7 @@ signals:
     void fullscreenRequested();
     void activityRequested();
     void loadSubtitleRequested();
+    void miniRequested();
     void seekRequested(double ratio);
     void volumeRequested(int value);
     void speedRequested(double value);
@@ -47,6 +60,7 @@ signals:
     void subtitleTrackRequested(int index);
     void interpolationRequested(int index);
     void videoRectChanged(int x, int y, int width, int height, int radius);
+    void subtitleInsetChanged(int pixels);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -55,10 +69,16 @@ protected:
 private:
     void pushState();
     void pushSettings();
+    void runScript(const QString &script);
 
     QWebEngineView *view_ = nullptr;
+    WindowBridge *windowBridge_ = nullptr;
     bool ready_ = false;
     bool loaded_ = false;
+    bool loading_ = false;
+    bool finished_ = false;
+    bool hasNext_ = false;
+    double buffered_ = 0.0;
     bool paused_ = false;
     bool muted_ = false;
     bool chromeVisible_ = true;

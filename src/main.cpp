@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QStyleFactory>
 
 #include <clocale>
@@ -7,11 +9,18 @@
 
 int main(int argc, char *argv[])
 {
+    // The video (QOpenGLWidget + libmpv render API) and the Qt WebEngine UI
+    // share one top-level window, so both must composite through OpenGL and
+    // share contexts. Both calls must happen before QApplication exists.
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
     QApplication app(argc, argv);
     std::setlocale(LC_NUMERIC, "C");
 
     app.setApplicationName("LAMBDA Player");
     app.setOrganizationName("LAMBDA");
+    app.setApplicationVersion(LAMBDA_VERSION);
     app.setStyle(QStyleFactory::create("Fusion"));
 
     app.setStyleSheet(R"QSS(

@@ -6,10 +6,12 @@
   <meta name="theme-color" content="#07080b" />
   <title>LAMBDA Player</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./window.css" />
 </head>
 <body>
   <main class="page-shell">
-    <section class="player" aria-label="LAMBDA Player interface">
+    <div class="drag-strip" data-drag aria-hidden="true"></div>
+    <section class="player" data-drag-mini aria-label="LAMBDA Player interface">
       <div class="ambient ambient-a"></div>
       <div class="ambient ambient-b"></div>
       <div class="noise"></div>
@@ -22,8 +24,8 @@
         <div class="poster-horizon"></div>
       </div>
 
-      <header class="topbar glass-panel">
-        <div class="brand-chip">
+      <header class="topbar glass-panel" data-drag>
+        <div class="brand-chip" role="button" tabindex="0" data-nodrag title="Back to Home" aria-label="Back to Home">
           <span class="brand-mark"><i></i><i></i></span>
           <span>LAMBDA</span>
         </div>
@@ -40,6 +42,7 @@
           <button class="icon-button soft" aria-label="More options">
             <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
           </button>
+          <div data-window-controls></div>
         </div>
       </header>
 
@@ -133,7 +136,7 @@
             <button class="icon-button" aria-label="Settings">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.2 19.3a1.7 1.7 0 0 0-1.6.4l-.07.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.6h.1A1.7 1.7 0 0 0 4 8.2a1.7 1.7 0 0 0-.4-1.6l-.06-.07L6.37 3.7l.06.06A1.7 1.7 0 0 0 8.3 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.3h4v.1A1.7 1.7 0 0 0 15.1 4a1.7 1.7 0 0 0 1.6-.4l.07-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.9 8.3a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
             </button>
-            <button class="icon-button" aria-label="Picture in picture">
+            <button class="icon-button" aria-label="Mini player">
               <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1"/></svg>
             </button>
             <button class="icon-button strong subtle" aria-label="Fullscreen">
@@ -152,6 +155,7 @@
     <p class="hint">LAMBDA Player · local playback</p>
   </main>
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="./window.js"></script>
   <script src="./player.js"></script>
 </body>
 </html>

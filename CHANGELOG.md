@@ -4,11 +4,58 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.2.2** — video visible again (libmpv render API under the Vui web chrome, lost-wakeup fix), frameless rounded window with custom controls, mini player, recent files/resume, polished and fully functional UI.
 - **v0.2.1** — LAMBDA Player identity reset; real Vui HTML/CSS on both Home and Player while preserving the native libmpv/RIFE engine.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
+## 2026-09-23 — v0.2.2 working video + frameless polished UI
+
+### Fixed
+- **Opening a video did nothing visible.** There were two causes.
+  - `mpv_set_wakeup_callback()` fires immediately. libmpv only fires again after `mpv_wait_event()` drains the queue. The `mpvWakeup` → `processMpvEvents` connection was made after `initMpv()`, so the first wakeup was lost and no mpv event was ever processed. The connection now happens before `initMpv()`.
+  - Video rendered into a native child HWND (`wid`), which Windows cannot composite under the transparent WebEngine chrome.
+- Video now uses libmpv's render API (`vo=libmpv`, OpenGL) in `src/mpvvideowidget.{h,cpp}` (`QOpenGLWidget`).
+  - The WebEngine chrome's internal `QQuickWidget` gets `WA_AlwaysStackOnTop`, so Qt blends it over the video.
+  - `main.cpp` sets `AA_ShareOpenGLContexts` and the OpenGL Qt Quick API.
+  - The first `loadfile` waits until the renderer exists.
+  - mpv still decodes, renders subtitles and runs the RIFE `@novarife` filter unchanged.
+
+### Added
+- Frameless window: `FramelessWindowHint`, with the native frame styles re-applied.
+  - `WM_NCCALCSIZE` makes the whole window client area.
+  - `WM_NCHITTEST` handles resize edges and page-reported drag regions (`src/windowbridge.{h,cpp}`, `resources/vui/window.js`).
+  - DWM rounded corners, dark mode and shadow.
+  - Maximize goes through Win32 `ShowWindow`.
+  - The app owns its fullscreen flag, because Qt reports "full screen" for a maximized frameless window on a monitor without a taskbar.
+- Custom window controls, page fades, toasts and themed scrollbars (`resources/vui/window.{js,css}`).
+- Home behaviour in `resources/vui/home.js`, backed by a Home WebChannel bridge:
+  - real recent files in Continue watching;
+  - open video, open folder and About popover;
+  - scrollspy nav and rail arrows.
+- Player behaviour:
+  - Next opens the next video in the same folder (natural sort);
+  - an always-on-top mini player;
+  - a finished/replay state, a loading state, buffered range and a timeline hover time;
+  - subtitles lifted above the visible deck (`sub-margin-y`);
+  - a Ctrl+O shortcut.
+- Resume support through mpv watch-later files (`start,aid,sid` only, so the RIFE `vf` is never restored). Recent files are stored in `%APPDATA%\LAMBDA\LAMBDA Player.ini`.
+- A developer capture hook, active only when `LAMBDA_DEBUG_GRAB=<dir>` is set.
+
+### Verification
+- Built locally with MSVC 14.51 and Qt 6.8.3 and run on Windows 11 with an RX 9070 XT.
+- Checked with in-app captures:
+  - video visible under the chrome;
+  - Home and Player layouts;
+  - subtitles above the deck.
+- Checked with real mouse input:
+  - maximize, restore, title-bar drag and corner resize;
+  - fullscreen, with Esc restoring the previous geometry;
+  - opening and closing the settings panel;
+  - Home showing the recent file with Resume.
+- The mini player and RIFE were not re-tested by automation after this change.
 
 ## 2026-09-23 — v0.2.1 LAMBDA Player / complete Vui CSS
 

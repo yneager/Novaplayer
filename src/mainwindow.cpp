@@ -2,12 +2,16 @@
 #include "homepage.h"
 #include "playerchrome.h"
 #include "interpolationcontroller.h"
+#include "mpvvideowidget.h"
+#include "windowbridge.h"
 
 #include <QApplication>
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QEvent>
+#include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsOpacityEffect>
@@ -25,7 +29,15 @@
 #include <QSequentialAnimationGroup>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QCollator>
+#include <QDesktopServices>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QScreen>
+#include <QSettings>
 #include <QStackedWidget>
+#include <QStandardPaths>
+#include <QWindow>
 #include <QStandardItemModel>
 #include <QStyle>
 #include <QTimer>
@@ -34,24 +46,67 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <QDateTime>
+
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <windowsx.h>
+#include <dwmapi.h>
+#endif
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("LAMBDA Player");
     setAcceptDrops(true);
+    // Custom-drawn title bar. The native frame styles (resize border, Aero
+    // Snap, shadow, Windows 11 rounded corners) are restored in
+    // applyNativeFrame(); see nativeEvent() for hit-testing.
+    setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
 
-    buildUi();
-    initMpv();
-
+    // Connect BEFORE initMpv(): mpv_set_wakeup_callback() invokes the callback
+    // immediately, and libmpv only calls it again after mpv_wait_event() has
+    // drained the queue. A wakeup emitted before this connection existed was
+    // lost, so no mpv event (file-loaded, time-pos, ...) was ever processed.
     connect(this, &MainWindow::mpvWakeup,
             this, &MainWindow::processMpvEvents,
             Qt::QueuedConnection);
 
+    buildUi();
+    initMpv();
+    connectWindowBridge(homePage_->windowBridge());
+    connectWindowBridge(playerChrome_->windowBridge());
+    loadRecents();
+
+    applyNativeFrame();
+    updateWindowState();
+
     qApp->installEventFilter(this);
+
+    // Developer aid (inactive unless LAMBDA_DEBUG_GRAB=<dir> is set): writing
+    // a file named "<name>.request" into <dir> makes the app save its own
+    // composited window (video + web UI) as "<name>.png". Desktop screen
+    // capture cannot read OpenGL content on some drivers.
+    const QString grabDir = qEnvironmentVariable("LAMBDA_DEBUG_GRAB");
+    if (!grabDir.isEmpty()) {
+        auto *grabTimer = new QTimer(this);
+        grabTimer->setInterval(250);
+        connect(grabTimer, &QTimer::timeout, this, [this, grabDir] {
+            const QDir dir(grabDir);
+            const QStringList requests = dir.entryList({"*.request"}, QDir::Files);
+            for (const QString &request : requests) {
+                const QString name = QFileInfo(request).completeBaseName();
+                QFile::remove(dir.filePath(request));
+                grab().save(dir.filePath(name + ".png"));
+            }
+        });
+        grabTimer->start();
+    }
 }
 
 MainWindow::~MainWindow()
@@ -59,14 +114,24 @@ MainWindow::~MainWindow()
     qApp->removeEventFilter(this);
 
     if (mpv_) {
+        rememberCurrentProgress();
+        // Resume position for "Continue watching" (mpv watch-later).
+        if (mediaLoaded_ && !eofReached_) {
+            const char *writeArgs[] = {"write-watch-later-config", nullptr};
+            mpv_command(mpv_, writeArgs);
+        }
         mpv_set_wakeup_callback(mpv_, nullptr, nullptr);
+        // The render context must be freed before the mpv core.
+        if (video_) {
+            video_->shutdown();
+        }
         mpv_terminate_destroy(mpv_);
     }
 }
 
 void MainWindow::buildUi()
 {
-    setMinimumSize(960, 620);
+    setMinimumSize(kMinimumWindowSize);
 
     appRoot_ = new QWidget(this);
     appRoot_->setObjectName("appRoot");
@@ -86,7 +151,9 @@ void MainWindow::buildUi()
     stack_->setCurrentWidget(homePage_);
 
     connect(homePage_, &HomePage::openVideoRequested, this, &MainWindow::openFile);
+    connect(homePage_, &HomePage::openFolderRequested, this, &MainWindow::openFolder);
     connect(homePage_, &HomePage::resumeRequested, this, &MainWindow::resumeFromHome);
+    connect(homePage_, &HomePage::openLicensesRequested, this, &MainWindow::openLicenses);
     connect(homePage_, &HomePage::openPathRequested, this, [this](const QString &path) {
         openPath(path);
     });
@@ -95,12 +162,20 @@ void MainWindow::buildUi()
     mainLayout_->setContentsMargins(0, 0, 0, 0);
     mainLayout_->setSpacing(0);
 
-    video_ = new QWidget(root_);
-    video_->setObjectName("videoSurface");
-    video_->setAttribute(Qt::WA_NativeWindow);
-    video_->setAttribute(Qt::WA_DontCreateNativeAncestors);
-    video_->setMinimumSize(640, 360);
-    video_->setMouseTracking(true);
+    // libmpv renders into this OpenGL widget through its render API. It is a
+    // normal (non-native) widget so Qt can composite the translucent web
+    // chrome above it.
+    video_ = new MpvVideoWidget(root_);
+    connect(video_, &MpvVideoWidget::renderReady, this, [this] {
+        if (!pendingPath_.isEmpty()) {
+            const QString path = pendingPath_;
+            pendingPath_.clear();
+            command({"loadfile", path, "replace"});
+        }
+    });
+    connect(video_, &MpvVideoWidget::renderFailed, this, [this](const QString &reason) {
+        showInterpolationError(reason);
+    });
 
     // Top glass bar: Vui's brand/title region plus two global action buttons.
     // The concept's share slot is mapped to LAMBDA Player's existing Open action
@@ -356,8 +431,9 @@ void MainWindow::buildUi()
     settingsPanel_->setVisible(false);
     controlsLayout->addWidget(settingsPanel_);
 
-    // The real Vui player is rendered by Chromium as CSS/HTML chrome.
-    // libmpv keeps its existing native HWND surface underneath this view.
+    // The real Vui player is rendered by Chromium as CSS/HTML chrome, composited
+    // by Qt above the OpenGL video widget. The native widgets above are only
+    // kept as hidden state holders for tracks/speed/interpolation.
     for (QWidget *legacyOverlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
         legacyOverlay->hide();
     }
@@ -371,13 +447,12 @@ void MainWindow::buildUi()
     connect(playerChrome_, &PlayerChrome::openPathRequested, this, &MainWindow::openPath);
     connect(playerChrome_, &PlayerChrome::homeRequested, this, &MainWindow::showHome);
     connect(playerChrome_, &PlayerChrome::togglePauseRequested, this, &MainWindow::togglePause);
-    connect(playerChrome_, &PlayerChrome::nextRequested, this, [this] {
-        command({"playlist-next", "weak"});
-    });
+    connect(playerChrome_, &PlayerChrome::nextRequested, this, &MainWindow::playNextInFolder);
+    connect(playerChrome_, &PlayerChrome::miniRequested, this, &MainWindow::toggleMiniPlayer);
     connect(playerChrome_, &PlayerChrome::muteRequested, this, &MainWindow::toggleMute);
     connect(playerChrome_, &PlayerChrome::fullscreenRequested, this, &MainWindow::toggleFullscreen);
     connect(playerChrome_, &PlayerChrome::activityRequested, this, [this] {
-        if (isFullScreen()) showFullscreenControls();
+        if (fullscreenMode_) showFullscreenControls();
     });
     connect(playerChrome_, &PlayerChrome::loadSubtitleRequested, this, &MainWindow::loadSubtitle);
     connect(playerChrome_, &PlayerChrome::seekRequested, this, [this](double ratio) {
@@ -417,18 +492,18 @@ void MainWindow::buildUi()
     });
     connect(playerChrome_, &PlayerChrome::videoRectChanged, this,
             [this](int x, int y, int width, int height, int radius) {
+        Q_UNUSED(radius); // the web chrome paints the rounded mask itself
         if (!video_ || width <= 0 || height <= 0) return;
         video_->setGeometry(x, y, width, height);
-        if (radius > 0) {
-            QPainterPath path;
-            path.addRoundedRect(QRectF(0, 0, width, height), radius, radius);
-            video_->setMask(QRegion(path.toFillPolygon().toPolygon()));
-        } else {
-            video_->clearMask();
-        }
         playerChrome_->raise();
+        updateSubtitleMargin();
+    });
+    connect(playerChrome_, &PlayerChrome::subtitleInsetChanged, this, [this](int pixels) {
+        subtitleInset_ = pixels;
+        updateSubtitleMargin();
     });
     connect(playerChrome_, &PlayerChrome::ready, this, [this] {
+        playerChrome_->setHasNext(!nextPath_.isEmpty());
         updatePlaybackUi();
         updateTimeLabel();
         updateCenterState();
@@ -440,12 +515,6 @@ void MainWindow::buildUi()
 
     setCentralWidget(appRoot_);
 
-    transitionOverlay_ = new QWidget(appRoot_);
-    transitionOverlay_->setObjectName("transitionCurtain");
-    transitionOverlay_->setAttribute(Qt::WA_NativeWindow);
-    transitionOverlay_->winId();
-    transitionOverlay_->hide();
-
     connect(homeButton_, &QPushButton::clicked, this, &MainWindow::showHome);
     connect(topOpenButton, &QPushButton::clicked, this, &MainWindow::openFile);
     connect(moreButton, &QPushButton::clicked, this, &MainWindow::toggleSettingsPanel);
@@ -455,9 +524,7 @@ void MainWindow::buildUi()
     connect(playButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
     connect(railPlayerButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
     connect(centerPlayButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
-    connect(nextButton, &QPushButton::clicked, this, [this] {
-        command({"playlist-next", "weak"});
-    });
+    connect(nextButton, &QPushButton::clicked, this, &MainWindow::playNextInFolder);
 
     connect(railAudioButton, &QPushButton::clicked, this, [this] {
         showTrackPicker(audioTrack_);
@@ -489,7 +556,7 @@ void MainWindow::buildUi()
     controlsSlide_->setDuration(500);
     controlsSlide_->setEasingCurve(QEasingCurve::OutCubic);
     connect(controlsSlide_, &QPropertyAnimation::finished, this, [this] {
-        if (isFullScreen() && !fullscreenControlsVisible_) {
+        if (fullscreenMode_ && !fullscreenControlsVisible_) {
             controls_->hide();
             setCursor(Qt::BlankCursor);
         }
@@ -516,8 +583,8 @@ void MainWindow::initMpv()
         throw std::runtime_error("Could not create libmpv context.");
     }
 
-    int64_t wid = static_cast<int64_t>(video_->winId());
-    mpv_set_option(mpv_, "wid", MPV_FORMAT_INT64, &wid);
+    // Render through libmpv's render API into MpvVideoWidget (no native wid).
+    mpv_set_option_string(mpv_, "vo", "libmpv");
     mpv_set_option_string(mpv_, "hwdec", "auto-safe");
     mpv_set_option_string(mpv_, "keep-open", "yes");
     mpv_set_option_string(mpv_, "osc", "no");
@@ -525,16 +592,33 @@ void MainWindow::initMpv()
     mpv_set_option_string(mpv_, "sub-visibility", "yes");
     mpv_set_option_string(mpv_, "embeddedfonts", "yes");
     mpv_set_option_string(mpv_, "demuxer-mkv-subtitle-preroll", "yes");
+    // Letterbox colour matches the Vui player background.
+    mpv_set_option_string(mpv_, "background-color", "#000000");
+
+    // "Continue watching": mpv's own watch-later files store the resume
+    // position. Only the position and track choices are restored - never the
+    // video filter chain (the optional @novarife RIFE filter stays Off until
+    // the user enables it).
+    const QString watchLaterDir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                                      .filePath("watch_later");
+    QDir().mkpath(watchLaterDir);
+    mpv_set_option_string(mpv_, "watch-later-dir", QDir::toNativeSeparators(watchLaterDir).toUtf8().constData());
+    mpv_set_option_string(mpv_, "watch-later-options", "start,aid,sid");
+    mpv_set_option_string(mpv_, "resume-playback", "yes");
 
     if (mpv_initialize(mpv_) < 0) {
         throw std::runtime_error("Could not initialize libmpv.");
     }
+    video_->setMpv(mpv_);
 
     mpv_observe_property(mpv_, 1, "time-pos", MPV_FORMAT_DOUBLE);
     mpv_observe_property(mpv_, 2, "duration", MPV_FORMAT_DOUBLE);
     mpv_observe_property(mpv_, 3, "pause", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv_, 4, "mute", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv_, 5, "chapter", MPV_FORMAT_INT64);
+    mpv_observe_property(mpv_, 6, "eof-reached", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv_, 7, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv_, 8, "video-params/h", MPV_FORMAT_INT64);
 
     // Error-level log messages are needed to notice when mpv disables the
     // RIFE VapourSynth filter after a script/runtime failure.
@@ -600,23 +684,48 @@ void MainWindow::handleEvent(mpv_event *event)
             paused_ = *static_cast<int *>(property->data) != 0;
             updatePlaybackUi();
             updateCenterState();
+            if (paused_) {
+                rememberCurrentProgress();
+            }
         } else if (name == "mute" && property->format == MPV_FORMAT_FLAG) {
             muted_ = *static_cast<int *>(property->data) != 0;
             updatePlaybackUi();
         } else if (name == "chapter" && property->format == MPV_FORMAT_INT64) {
             updateChapterInfo();
+        } else if (name == "eof-reached" && property->format == MPV_FORMAT_FLAG) {
+            const bool eof = *static_cast<int *>(property->data) != 0;
+            if (eof != eofReached_) {
+                eofReached_ = eof;
+                if (eof && mediaLoaded_) {
+                    // Finished: start from the beginning next time.
+                    command({"delete-watch-later-config"});
+                    rememberCurrentProgress();
+                }
+                if (playerChrome_) playerChrome_->setFinished(eof && mediaLoaded_);
+            }
+        } else if (name == "demuxer-cache-time" && property->format == MPV_FORMAT_DOUBLE) {
+            if (playerChrome_) playerChrome_->setBuffered(*static_cast<double *>(property->data));
+        } else if (name == "video-params/h" && property->format == MPV_FORMAT_INT64) {
+            updateQualityBadge();
         }
     } else if (event->event_id == MPV_EVENT_FILE_LOADED) {
         mediaLoaded_ = true;
         paused_ = false;
+        eofReached_ = false;
+        const QString fileName = QFileInfo(currentPath_).fileName();
+        addRecent(currentPath_);
         if (homePage_ && !currentPath_.isEmpty()) {
-            homePage_->setCurrentMedia(QFileInfo(currentPath_).fileName(), true);
+            homePage_->setCurrentMedia(fileName, currentPath_, true);
         }
         mediaEyebrow_->setText("NOW PLAYING");
         if (playerChrome_) {
+            playerChrome_->setLoading(false);
+            playerChrome_->setFinished(false);
             playerChrome_->setMediaLoaded(true);
-            playerChrome_->setMediaTitle(QFileInfo(currentPath_).fileName(), "NOW PLAYING");
+            playerChrome_->setMediaTitle(fileName, "NOW PLAYING");
         }
+        nextPath_ = findNextInFolder(currentPath_);
+        if (playerChrome_) playerChrome_->setHasNext(!nextPath_.isEmpty());
         updatePlaybackUi();
         updateCenterState();
         QTimer::singleShot(0, this, &MainWindow::refreshTracks);
@@ -624,6 +733,23 @@ void MainWindow::handleEvent(mpv_event *event)
         QTimer::singleShot(0, this, &MainWindow::updateChapterInfo);
         QTimer::singleShot(0, this, &MainWindow::updateQualityBadge);
     } else if (event->event_id == MPV_EVENT_END_FILE) {
+        auto *endFile = static_cast<mpv_event_end_file *>(event->data);
+        if (endFile && endFile->reason == MPV_END_FILE_REASON_ERROR) {
+            // The file could not be opened/decoded: tell the user and return
+            // the player to its ready state instead of a silent black screen.
+            const QString failedName = QFileInfo(currentPath_).fileName();
+            mediaLoaded_ = false;
+            removeRecent(currentPath_);
+            if (playerChrome_) {
+                playerChrome_->setLoading(false);
+                playerChrome_->setMediaLoaded(false);
+                playerChrome_->setMediaTitle("Open or drop a video", "READY");
+            }
+            if (homePage_) homePage_->setCurrentMedia({}, {}, false);
+            showToast(QString("Could not play \"%1\": %2")
+                          .arg(failedName, QString::fromUtf8(mpv_error_string(endFile->error))),
+                      true);
+        }
         paused_ = true;
         updatePlaybackUi();
         updateCenterState();
@@ -662,6 +788,9 @@ void MainWindow::interpolationModeChanged(int index)
 
     updateQualityBadge();
     syncChromeSettings();
+    if (mode != InterpolationController::Mode::Off) {
+        showToast(QString("Frame interpolation on: %1").arg(interpolationMode_->itemText(index)));
+    }
 }
 
 QString MainWindow::formatFps(double fps)
@@ -725,12 +854,36 @@ void MainWindow::interpolationDeactivated(const QString &reason)
 
 void MainWindow::showInterpolationError(const QString &message)
 {
-    // Deferred so the dialog never runs inside mpv event processing.
-    QTimer::singleShot(0, this, [this, message] {
-        QMessageBox::warning(
-            this,
-            "Frame interpolation",
-            QString("Frame interpolation is off. Playback continues normally.\n\n%1").arg(message));
+    showToast(QString("Frame interpolation is off. Playback continues normally.\n%1").arg(message), true);
+}
+
+void MainWindow::updateSubtitleMargin()
+{
+    if (!mpv_ || !video_ || video_->height() <= 0) {
+        return;
+    }
+    // Lift subtitles above the visible control deck. sub-margin-y is measured
+    // in scaled pixels of a 720-line virtual screen; 22 is mpv's default.
+    const int margin = subtitleInset_ > 0
+                           ? qBound(22, qRound((subtitleInset_ + 14) * 720.0 / video_->height()), 520)
+                           : 22;
+    if (margin == lastSubtitleMargin_) {
+        return;
+    }
+    lastSubtitleMargin_ = margin;
+    setMpvPropertyInt64("sub-margin-y", margin);
+}
+
+void MainWindow::showToast(const QString &message, bool warning)
+{
+    // Deferred so it never runs inside mpv event processing. Themed toasts
+    // are shown on whichever page is visible.
+    QTimer::singleShot(0, this, [this, message, warning] {
+        if (isPlayerVisible() && playerChrome_) {
+            playerChrome_->toast(message, warning);
+        } else if (homePage_) {
+            homePage_->toast(message, warning);
+        }
     });
 }
 
@@ -919,6 +1072,18 @@ void MainWindow::loadSubtitle()
     QTimer::singleShot(250, this, &MainWindow::refreshTracks);
 }
 
+bool MainWindow::keyEventOwnerIsThisWindow(QObject *watched) const
+{
+    // The application-wide filter sees key events several times (window,
+    // widget, focus proxy). Handle each key once, at the QWindow level, and
+    // never while a modal dialog (e.g. the file picker) is open.
+    if (QApplication::activeModalWidget()) {
+        return false;
+    }
+    auto *window = qobject_cast<QWindow *>(watched);
+    return window && window == windowHandle();
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == seek_ && event->type() == QEvent::MouseButtonPress) {
@@ -937,19 +1102,36 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    if (event->type() == QEvent::KeyPress && isActiveWindow() && isPlayerVisible()) {
+    if (event->type() == QEvent::KeyPress && isActiveWindow()
+        && keyEventOwnerIsThisWindow(watched)) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_O && keyEvent->modifiers().testFlag(Qt::ControlModifier)) {
+            if (!keyEvent->isAutoRepeat()) {
+                QTimer::singleShot(0, this, &MainWindow::openFile);
+            }
+            return true;
+        }
+    }
+
+    if (event->type() == QEvent::KeyPress && isActiveWindow() && isPlayerVisible()
+        && keyEventOwnerIsThisWindow(watched)) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
 
         switch (keyEvent->key()) {
         case Qt::Key_Space:
-            togglePause();
+            if (!keyEvent->isAutoRepeat()) togglePause();
             return true;
         case Qt::Key_F:
-            toggleFullscreen();
+            if (!keyEvent->isAutoRepeat()) toggleFullscreen();
             return true;
         case Qt::Key_Escape:
-            if (isFullScreen()) {
+            if (playerChrome_) playerChrome_->closeSettings();
+            if (fullscreenMode_) {
                 toggleFullscreen();
+                return true;
+            }
+            if (miniMode_) {
+                toggleMiniPlayer();
                 return true;
             }
             break;
@@ -967,7 +1149,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
-    if (isPlayerVisible() && isFullScreen() && event->type() == QEvent::MouseMove) {
+    if (isPlayerVisible() && fullscreenMode_ && event->type() == QEvent::MouseMove) {
         auto *widget = qobject_cast<QWidget *>(watched);
         if (widget && (widget == this || isAncestorOf(widget))) {
             showFullscreenControls();
@@ -987,7 +1169,7 @@ void MainWindow::toggleSettingsPanel()
 
     controlsHeight_ = controls_->sizeHint().height();
 
-    if (isFullScreen()) {
+    if (fullscreenMode_) {
         showFullscreenControls();
     }
     layoutOverlayWidgets();
@@ -1010,7 +1192,7 @@ void MainWindow::showTrackPicker(QComboBox *combo)
         layoutOverlayWidgets();
     }
 
-    if (isFullScreen()) {
+    if (fullscreenMode_) {
         showFullscreenControls();
     }
 
@@ -1140,7 +1322,7 @@ void MainWindow::raiseOverlayWidgets()
 
 void MainWindow::setFullscreenChromeVisible(bool visible)
 {
-    if (!isFullScreen()) visible = true;
+    if (!fullscreenMode_) visible = true;
     fullscreenControlsVisible_ = visible;
     if (playerChrome_) playerChrome_->setChromeVisible(visible);
     for (QWidget *legacyOverlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
@@ -1186,7 +1368,7 @@ void MainWindow::leaveFullscreenControlsMode()
 
 void MainWindow::showFullscreenControls()
 {
-    if (!isFullScreen()) return;
+    if (!fullscreenMode_) return;
     fullscreenControlsVisible_ = true;
     unsetCursor();
     setFullscreenChromeVisible(true);
@@ -1196,7 +1378,7 @@ void MainWindow::showFullscreenControls()
 
 void MainWindow::hideFullscreenControls()
 {
-    if (!isFullScreen()) return;
+    if (!fullscreenMode_) return;
     fullscreenControlsVisible_ = false;
     setFullscreenChromeVisible(false);
     setCursor(Qt::BlankCursor);
@@ -1209,18 +1391,21 @@ void MainWindow::showHome()
         return;
     }
 
-    if (isFullScreen()) {
-        leaveFullscreenControlsMode();
-        showNormal();
+    if (miniMode_) {
+        toggleMiniPlayer();
+    }
+    if (fullscreenMode_) {
+        toggleFullscreen();
     }
 
     if (mediaLoaded_) {
         setMpvPropertyFlag("pause", true);
+        rememberCurrentProgress();
     }
 
-    if (!currentPath_.isEmpty()) {
-        homePage_->setCurrentMedia(QFileInfo(currentPath_).fileName(), mediaLoaded_);
-    }
+    homePage_->setCurrentMedia(mediaLoaded_ ? QFileInfo(currentPath_).fileName() : QString(),
+                               mediaLoaded_ ? currentPath_ : QString(), mediaLoaded_);
+    publishRecents();
 
     transitionTo(homePage_);
     setWindowTitle("LAMBDA Player");
@@ -1228,86 +1413,82 @@ void MainWindow::showHome()
 
 void MainWindow::resumeFromHome()
 {
-    if (!mediaLoaded_ || currentPath_.isEmpty()) {
-        openFile();
+    if (mediaLoaded_ && !currentPath_.isEmpty()) {
+        showPlayer(true);
         return;
     }
 
-    showPlayer(true);
+    // No session: continue with the most recent video, else ask for one.
+    for (const QVariant &entry : recents_) {
+        const QString path = entry.toMap().value("path").toString();
+        if (QFileInfo::exists(path)) {
+            openPath(path);
+            return;
+        }
+    }
+    openFile();
 }
 
 void MainWindow::showPlayer(bool resumePlayback)
 {
     transitionTo(root_);
 
-    QTimer::singleShot(180, this, [this] {
-        layoutOverlayWidgets();
-        raiseOverlayWidgets();
-    });
-
     if (resumePlayback && mediaLoaded_) {
+        if (eofReached_) {
+            command({"seek", "0", "absolute"});
+        }
         setMpvPropertyFlag("pause", false);
     }
 }
 
 void MainWindow::transitionTo(QWidget *target)
 {
-    if (!stack_ || !target || stack_->currentWidget() == target) {
+    if (!stack_ || !target) {
+        return;
+    }
+
+    if (transitionTimer_ && transitionTimer_->isActive()) {
+        // A transition is already running: retarget it.
+        transitionTarget_ = target;
+        return;
+    }
+
+    if (stack_->currentWidget() == target) {
         if (target == root_) {
             layoutOverlayWidgets();
-            raiseOverlayWidgets();
         }
         return;
     }
 
-    if (pageTransition_) {
-        pageTransition_->stop();
-        pageTransition_->deleteLater();
-        pageTransition_ = nullptr;
+    // Fade the current page out (CSS, 170 ms), swap, then fade the new page in.
+    if (stack_->currentWidget() == homePage_) {
+        homePage_->playLeaveAnimation();
+    } else if (playerChrome_) {
+        playerChrome_->playLeaveAnimation();
     }
 
-    transitionOverlay_->setGeometry(appRoot_->rect());
-    transitionOverlay_->raise();
-    transitionOverlay_->show();
-
-    auto *effect = qobject_cast<QGraphicsOpacityEffect *>(transitionOverlay_->graphicsEffect());
-    if (!effect) {
-        effect = new QGraphicsOpacityEffect(transitionOverlay_);
-        transitionOverlay_->setGraphicsEffect(effect);
+    transitionTarget_ = target;
+    if (!transitionTimer_) {
+        transitionTimer_ = new QTimer(this);
+        transitionTimer_->setSingleShot(true);
+        transitionTimer_->setInterval(170);
+        connect(transitionTimer_, &QTimer::timeout, this, [this] {
+            QWidget *next = transitionTarget_;
+            transitionTarget_ = nullptr;
+            if (!next || stack_->currentWidget() == next) {
+                return;
+            }
+            stack_->setCurrentWidget(next);
+            if (next == root_) {
+                layoutOverlayWidgets();
+                if (playerChrome_) playerChrome_->playEnterAnimation();
+            } else if (next == homePage_) {
+                homePage_->playEnterAnimation();
+            }
+            updateWindowState();
+        });
     }
-    effect->setOpacity(0.0);
-
-    auto *group = new QSequentialAnimationGroup(this);
-    auto *cover = new QPropertyAnimation(effect, "opacity", group);
-    cover->setDuration(150);
-    cover->setStartValue(0.0);
-    cover->setEndValue(1.0);
-    cover->setEasingCurve(QEasingCurve::InOutCubic);
-
-    auto *reveal = new QPropertyAnimation(effect, "opacity", group);
-    reveal->setDuration(220);
-    reveal->setStartValue(1.0);
-    reveal->setEndValue(0.0);
-    reveal->setEasingCurve(QEasingCurve::OutCubic);
-
-    connect(cover, &QPropertyAnimation::finished, this, [this, target] {
-        stack_->setCurrentWidget(target);
-        if (target == root_) {
-            layoutOverlayWidgets();
-            raiseOverlayWidgets();
-        }
-        transitionOverlay_->raise();
-    });
-
-    connect(group, &QSequentialAnimationGroup::finished, this, [this, group] {
-        transitionOverlay_->hide();
-        transitionOverlay_->setGraphicsEffect(nullptr);
-        group->deleteLater();
-        pageTransition_ = nullptr;
-    });
-
-    pageTransition_ = group;
-    group->start();
+    transitionTimer_->start();
 }
 
 bool MainWindow::isPlayerVisible() const
@@ -1335,49 +1516,184 @@ void MainWindow::command(const QStringList &args)
     mpv_command_async(mpv_, 0, values.data());
 }
 
+// ---- Files ------------------------------------------------------------------
+
+namespace {
+
+const QStringList &videoNameFilters()
+{
+    static const QStringList filters = {
+        "*.mkv", "*.mp4", "*.m4v", "*.avi", "*.mov", "*.webm", "*.wmv", "*.flv",
+        "*.ts", "*.mts", "*.m2ts", "*.mpg", "*.mpeg", "*.ogv", "*.3gp", "*.vob",
+    };
+    return filters;
+}
+
+QSettings appSettings()
+{
+    return QSettings(QSettings::IniFormat, QSettings::UserScope, "LAMBDA", "LAMBDA Player");
+}
+
+} // namespace
+
+QString MainWindow::dialogStartDirectory() const
+{
+    if (!currentPath_.isEmpty()) {
+        return QFileInfo(currentPath_).absolutePath();
+    }
+    const QString last = appSettings().value("files/lastDirectory").toString();
+    if (!last.isEmpty() && QFileInfo(last).isDir()) {
+        return last;
+    }
+    return QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+}
+
+QStringList MainWindow::videosInFolder(const QString &directory)
+{
+    QDir dir(directory);
+    QStringList files = dir.entryList(videoNameFilters(), QDir::Files | QDir::Readable);
+    // Natural order: "Episode 2" before "Episode 10".
+    QCollator collator;
+    collator.setNumericMode(true);
+    collator.setCaseSensitivity(Qt::CaseInsensitive);
+    std::sort(files.begin(), files.end(), [&collator](const QString &a, const QString &b) {
+        return collator.compare(a, b) < 0;
+    });
+    QStringList paths;
+    for (const QString &file : files) {
+        paths << dir.absoluteFilePath(file);
+    }
+    return paths;
+}
+
+QString MainWindow::findNextInFolder(const QString &path)
+{
+    if (path.isEmpty()) {
+        return {};
+    }
+    const QFileInfo info(path);
+    const QStringList videos = videosInFolder(info.absolutePath());
+    for (int i = 0; i < videos.size(); ++i) {
+        if (QFileInfo(videos[i]).fileName().compare(info.fileName(), Qt::CaseInsensitive) == 0) {
+            return i + 1 < videos.size() ? videos[i + 1] : QString();
+        }
+    }
+    return {};
+}
+
 void MainWindow::openFile()
 {
     const QString path = QFileDialog::getOpenFileName(
         this,
         "Open video",
-        {},
-        "Video files (*.mkv *.mp4 *.avi *.mov *.webm *.m4v *.ts *.mts *.wmv);;All files (*.*)");
+        dialogStartDirectory(),
+        QString("Video files (%1);;All files (*.*)").arg(videoNameFilters().join(' ')));
 
     if (!path.isEmpty()) {
         openPath(path);
     }
 }
 
+void MainWindow::openFolder()
+{
+    const QString directory = QFileDialog::getExistingDirectory(this, "Play a folder", dialogStartDirectory());
+    if (directory.isEmpty()) {
+        return;
+    }
+    const QStringList videos = videosInFolder(directory);
+    if (videos.isEmpty()) {
+        showToast("No video files were found in that folder.", true);
+        return;
+    }
+    openPath(videos.first());
+}
+
+void MainWindow::playNextInFolder()
+{
+    if (nextPath_.isEmpty()) {
+        showToast("This is the last video in the folder.");
+        return;
+    }
+    openPath(nextPath_);
+}
+
+void MainWindow::openLicenses()
+{
+    const QDir appDir(QCoreApplication::applicationDirPath());
+    const QString licenses = appDir.filePath("licenses");
+    const QString target = QFileInfo(licenses).isDir() ? licenses : appDir.filePath("THIRD_PARTY_NOTICES.md");
+    if (!QFileInfo::exists(target) || !QDesktopServices::openUrl(QUrl::fromLocalFile(target))) {
+        showToast("The third-party license files were not found next to LambdaPlayer.exe.", true);
+    }
+}
+
 void MainWindow::openPath(const QString &path)
 {
-    currentPath_ = path;
-    mediaLoaded_ = false;
-
-    const QString fileName = QFileInfo(path).fileName();
-    if (homePage_) {
-        homePage_->setCurrentMedia(fileName, true);
+    if (path.isEmpty()) {
+        return;
     }
+    const QFileInfo info(path);
+    if (!info.exists()) {
+        removeRecent(path);
+        showToast(QString("File not found:\n%1").arg(QDir::toNativeSeparators(path)), true);
+        return;
+    }
+
+    // Keep the resume position of the video being replaced.
+    if (mediaLoaded_) {
+        rememberCurrentProgress();
+        if (!eofReached_) {
+            command({"write-watch-later-config"});
+        }
+    }
+
+    currentPath_ = info.absoluteFilePath();
+    mediaLoaded_ = false;
+    eofReached_ = false;
+    nextPath_.clear();
+    position_ = 0.0;
+    duration_ = 0.0;
+    appSettings().setValue("files/lastDirectory", info.absolutePath());
+
+    const QString fileName = info.fileName();
     showPlayer(false);
 
     mediaEyebrow_->setText("LOADING");
     mediaTitle_->setText(fileName);
     if (playerChrome_) {
         playerChrome_->setMediaLoaded(false);
+        playerChrome_->setFinished(false);
+        playerChrome_->setHasNext(false);
+        playerChrome_->setLoading(true);
         playerChrome_->setMediaTitle(fileName, "LOADING");
+        playerChrome_->setTimeline(0.0, 0.0);
     }
     centerKicker_->setText("LOADING");
     centerText_->setText(fileName);
     centerState_->hide();
 
-    command({"loadfile", path, "replace"});
-    setWindowTitle(QString("LAMBDA Player — %1").arg(fileName));
-    raiseOverlayWidgets();
+    // The OpenGL renderer is created when the player page is first shown;
+    // mpv's libmpv VO needs it before video starts, so defer the first load.
+    if (video_ && video_->isRenderReady()) {
+        command({"loadfile", currentPath_, "replace"});
+    } else {
+        pendingPath_ = currentPath_;
+    }
+    setWindowTitle(QString("%1 — LAMBDA Player").arg(fileName));
 }
 
 void MainWindow::togglePause()
 {
     if (!mediaLoaded_) {
-        openFile();
+        if (pendingPath_.isEmpty() && !(playerChrome_ && mediaEyebrow_->text() == "LOADING")) {
+            openFile();
+        }
+        return;
+    }
+    if (eofReached_) {
+        // Finished (keep-open): play again from the start.
+        command({"seek", "0", "absolute"});
+        setMpvPropertyFlag("pause", false);
         return;
     }
     setMpvPropertyFlag("pause", !paused_);
@@ -1393,11 +1709,25 @@ void MainWindow::toggleFullscreen()
 {
     if (!isPlayerVisible()) return;
 
-    if (isFullScreen()) {
+    // fullscreenMode_ is owned by the app: Qt also reports "full screen" for a
+    // frameless window maximized on a monitor without a taskbar.
+    if (fullscreenMode_) {
+        fullscreenMode_ = false;
         leaveFullscreenControlsMode();
         showNormal();
+        if (maximizedBeforeFullscreen_) {
+            maximizeWindow();
+        }
         QTimer::singleShot(0, this, &MainWindow::layoutOverlayWidgets);
     } else {
+        if (miniMode_) {
+            toggleMiniPlayer();
+        }
+        maximizedBeforeFullscreen_ = isWindowMaximized();
+        if (maximizedBeforeFullscreen_) {
+            toggleMaximized();
+        }
+        fullscreenMode_ = true;
         enterFullscreenControlsMode();
         showFullScreen();
         QTimer::singleShot(0, this, [this] {
@@ -1405,21 +1735,378 @@ void MainWindow::toggleFullscreen()
             showFullscreenControls();
         });
     }
+    updateWindowState();
 }
 
+// ---- Mini player (always on top) -------------------------------------------
+
+void MainWindow::setAlwaysOnTop(bool onTop)
+{
+#ifdef Q_OS_WIN
+    // SetWindowPos instead of Qt::WindowStaysOnTopHint: changing window
+    // flags would recreate the native window.
+    ::SetWindowPos(reinterpret_cast<HWND>(winId()), onTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+                   0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+#else
+    Q_UNUSED(onTop);
+#endif
+}
+
+void MainWindow::toggleMiniPlayer()
+{
+    if (!miniMode_) {
+        if (!isPlayerVisible()) {
+            return;
+        }
+        if (fullscreenMode_) {
+            toggleFullscreen();
+        }
+        miniRestoreMaximized_ = isWindowMaximized();
+        if (miniRestoreMaximized_) {
+            toggleMaximized(); // restore first so geometry() is the normal geometry
+        }
+        miniRestoreGeometry_ = geometry();
+
+        // Size the mini player to the video's aspect ratio.
+        double aspect = 16.0 / 9.0;
+        if (mpv_) {
+            double videoAspect = 0.0;
+            if (mpv_get_property(mpv_, "video-params/aspect", MPV_FORMAT_DOUBLE, &videoAspect) >= 0
+                && videoAspect > 0.2 && videoAspect < 5.0) {
+                aspect = videoAspect;
+            }
+        }
+        const QRect available = screen() ? screen()->availableGeometry() : QRect(0, 0, 1280, 720);
+        int width = qBound(320, available.width() / 4, 560);
+        int height = qBound(180, qRound(width / aspect), 420);
+        width = qRound(height * aspect);
+        const int margin = 24;
+
+        miniMode_ = true;
+        setMinimumSize(kMiniMinimumSize);
+        setGeometry(available.right() - width - margin + 1, available.bottom() - height - margin + 1, width, height);
+        setAlwaysOnTop(true);
+        if (playerChrome_) playerChrome_->closeSettings();
+    } else {
+        miniMode_ = false;
+        setAlwaysOnTop(false);
+        setMinimumSize(kMinimumWindowSize);
+        if (miniRestoreGeometry_.isValid()) {
+            setGeometry(miniRestoreGeometry_);
+        }
+        if (miniRestoreMaximized_) {
+            maximizeWindow();
+        }
+    }
+    updateWindowState();
+    QTimer::singleShot(0, this, &MainWindow::layoutOverlayWidgets);
+}
+
+// ---- Recently played ("Continue watching") ----------------------------------
+
+void MainWindow::loadRecents()
+{
+    recents_ = appSettings().value("recent/items").toList();
+    publishRecents();
+}
+
+void MainWindow::saveRecents()
+{
+    appSettings().setValue("recent/items", recents_);
+}
+
+int MainWindow::recentIndex(const QString &path) const
+{
+    for (int i = 0; i < recents_.size(); ++i) {
+        if (recents_[i].toMap().value("path").toString().compare(path, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void MainWindow::addRecent(const QString &path)
+{
+    if (path.isEmpty()) {
+        return;
+    }
+    QVariantMap entry;
+    const int index = recentIndex(path);
+    if (index >= 0) {
+        entry = recents_.takeAt(index).toMap();
+    }
+    entry.insert("path", path);
+    entry.insert("opened", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    recents_.prepend(entry);
+    while (recents_.size() > kMaxRecents) {
+        recents_.removeLast();
+    }
+    saveRecents();
+    publishRecents();
+}
+
+void MainWindow::removeRecent(const QString &path)
+{
+    const int index = recentIndex(path);
+    if (index >= 0) {
+        recents_.removeAt(index);
+        saveRecents();
+        publishRecents();
+    }
+}
+
+void MainWindow::rememberCurrentProgress()
+{
+    if (!mediaLoaded_ || currentPath_.isEmpty()) {
+        return;
+    }
+    const int index = recentIndex(currentPath_);
+    if (index < 0) {
+        return;
+    }
+    QVariantMap entry = recents_[index].toMap();
+    entry.insert("position", position_);
+    entry.insert("duration", duration_);
+    entry.insert("watched", eofReached_ || (duration_ > 0.0 && position_ / duration_ > 0.97));
+    recents_[index] = entry;
+    saveRecents();
+    publishRecents();
+}
+
+void MainWindow::publishRecents()
+{
+    if (!homePage_) {
+        return;
+    }
+    QJsonArray list;
+    for (const QVariant &value : recents_) {
+        const QVariantMap entry = value.toMap();
+        const QString path = entry.value("path").toString();
+        const QFileInfo info(path);
+        if (!info.exists()) {
+            continue;
+        }
+        const double position = entry.value("position").toDouble();
+        const double duration = entry.value("duration").toDouble();
+        QJsonObject item;
+        item.insert("path", path);
+        item.insert("name", info.completeBaseName());
+        item.insert("ext", info.suffix().toUpper());
+        item.insert("progress", duration > 0.0 ? qBound(0.0, position / duration, 1.0) : 0.0);
+        item.insert("remaining", duration > 0.0 ? qMax(0.0, duration - position) : 0.0);
+        item.insert("watched", entry.value("watched").toBool());
+        list.append(item);
+        if (list.size() >= 8) {
+            break;
+        }
+    }
+    homePage_->setRecents(list);
+}
+
+// ---- Frameless window -------------------------------------------------------
+
+WindowBridge *MainWindow::activeWindowBridge() const
+{
+    if (isPlayerVisible()) {
+        return playerChrome_ ? playerChrome_->windowBridge() : nullptr;
+    }
+    return homePage_ ? homePage_->windowBridge() : nullptr;
+}
+
+void MainWindow::connectWindowBridge(WindowBridge *bridge)
+{
+    if (!bridge) {
+        return;
+    }
+    connect(bridge, &WindowBridge::minimizeRequested, this, &QWidget::showMinimized);
+    connect(bridge, &WindowBridge::toggleMaximizeRequested, this, [this] {
+        if (miniMode_) {
+            toggleMiniPlayer();
+        } else if (fullscreenMode_) {
+            toggleFullscreen();
+        } else {
+            toggleMaximized();
+        }
+    });
+    connect(bridge, &WindowBridge::closeRequested, this, &QWidget::close);
+}
+
+bool MainWindow::isWindowMaximized() const
+{
+#ifdef Q_OS_WIN
+    return ::IsZoomed(reinterpret_cast<HWND>(winId())) != FALSE;
+#else
+    return isMaximized();
+#endif
+}
+
+void MainWindow::maximizeWindow()
+{
+    if (!isWindowMaximized()) {
+        toggleMaximized();
+    }
+}
+
+void MainWindow::toggleMaximized()
+{
+#ifdef Q_OS_WIN
+    // Let Windows own the maximized state (Qt's own frameless maximize just
+    // resizes the window, which Qt then reports as full screen when the work
+    // area equals the monitor).
+    ::ShowWindow(reinterpret_cast<HWND>(winId()), isWindowMaximized() ? SW_RESTORE : SW_MAXIMIZE);
+#else
+    isMaximized() ? showNormal() : showMaximized();
+#endif
+    updateWindowState();
+}
+
+void MainWindow::updateWindowState()
+{
+    const bool maximized = isWindowMaximized() && !fullscreenMode_;
+    for (WindowBridge *bridge : {homePage_ ? homePage_->windowBridge() : nullptr,
+                                 playerChrome_ ? playerChrome_->windowBridge() : nullptr}) {
+        if (bridge) {
+            bridge->setWindowState(maximized, fullscreenMode_, miniMode_);
+        }
+    }
+}
+
+void MainWindow::applyNativeFrame()
+{
+#ifdef Q_OS_WIN
+    if (fullscreenMode_) {
+        return;
+    }
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    // Restore the standard frame styles Qt drops for FramelessWindowHint:
+    // they give the window its resize border, Aero Snap, min/max animations,
+    // the DWM shadow and (Windows 11) rounded corners. WM_NCCALCSIZE below
+    // removes the visible title bar/border they would normally draw.
+    LONG_PTR style = ::GetWindowLongPtrW(hwnd, GWL_STYLE);
+    const LONG_PTR wanted = WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+    if ((style & wanted) != wanted) {
+        ::SetWindowLongPtrW(hwnd, GWL_STYLE, style | wanted);
+    }
+
+    const DWORD cornerPreference = 2;       // DWMWCP_ROUND
+    ::DwmSetWindowAttribute(hwnd, 33, &cornerPreference, sizeof(cornerPreference)); // DWMWA_WINDOW_CORNER_PREFERENCE
+    const BOOL darkMode = TRUE;
+    ::DwmSetWindowAttribute(hwnd, 20, &darkMode, sizeof(darkMode));                 // DWMWA_USE_IMMERSIVE_DARK_MODE
+    const MARGINS shadowMargins{0, 0, 1, 0};
+    ::DwmExtendFrameIntoClientArea(hwnd, &shadowMargins);
+
+    ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                   SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
+                       | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
+#endif
+}
+
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+#ifdef Q_OS_WIN
+    MSG *msg = static_cast<MSG *>(message);
+    switch (msg->message) {
+    case WM_NCCALCSIZE:
+        if (msg->wParam == TRUE) {
+            // The whole window is client area (no system title bar/border).
+            // A maximized window with a resize frame extends past the monitor
+            // by the frame thickness; pull the client area back inside it.
+            if (::IsZoomed(msg->hwnd) && !fullscreenMode_) {
+                auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(msg->lParam);
+                const UINT dpi = ::GetDpiForWindow(msg->hwnd);
+                const int frameX = ::GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
+                                   + ::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+                const int frameY = ::GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
+                                   + ::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+                RECT &client = params->rgrc[0];
+                HMONITOR monitor = ::MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
+                MONITORINFO info{};
+                info.cbSize = sizeof(info);
+                if (::GetMonitorInfoW(monitor, &info)) {
+                    // Only inset what actually lies outside the work area.
+                    client.left = qMax<LONG>(client.left, qMin<LONG>(client.left + frameX, info.rcWork.left));
+                    client.top = qMax<LONG>(client.top, qMin<LONG>(client.top + frameY, info.rcWork.top));
+                    client.right = qMin<LONG>(client.right, qMax<LONG>(client.right - frameX, info.rcWork.right));
+                    client.bottom = qMin<LONG>(client.bottom, qMax<LONG>(client.bottom - frameY, info.rcWork.bottom));
+                }
+            }
+            *result = 0;
+            return true;
+        }
+        break;
+    case WM_NCACTIVATE:
+        // Prevent Windows from painting an inactive caption over the client area.
+        *result = ::DefWindowProcW(msg->hwnd, msg->message, msg->wParam, -1);
+        return true;
+    case WM_NCHITTEST: {
+        if (fullscreenMode_) {
+            *result = HTCLIENT;
+            return true;
+        }
+        POINT point{GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+        ::ScreenToClient(msg->hwnd, &point);
+        RECT client;
+        ::GetClientRect(msg->hwnd, &client);
+        const qreal dpr = devicePixelRatioF();
+
+        if (!::IsZoomed(msg->hwnd)) {
+            const int border = qMax(4, qRound(kResizeBorder * dpr));
+            const bool left = point.x < border;
+            const bool right = point.x >= client.right - border;
+            const bool top = point.y < border;
+            const bool bottom = point.y >= client.bottom - border;
+            if (top && left) { *result = HTTOPLEFT; return true; }
+            if (top && right) { *result = HTTOPRIGHT; return true; }
+            if (bottom && left) { *result = HTBOTTOMLEFT; return true; }
+            if (bottom && right) { *result = HTBOTTOMRIGHT; return true; }
+            if (left) { *result = HTLEFT; return true; }
+            if (right) { *result = HTRIGHT; return true; }
+            if (top) { *result = HTTOP; return true; }
+            if (bottom) { *result = HTBOTTOM; return true; }
+        }
+
+        const QPointF logical(point.x / dpr, point.y / dpr);
+        if (WindowBridge *bridge = activeWindowBridge(); bridge && bridge->isDragPoint(logical)) {
+            *result = HTCAPTION;
+            return true;
+        }
+        *result = HTCLIENT;
+        return true;
+    }
+    default:
+        break;
+    }
+#endif
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        if (!fullscreenMode_) {
+            // Qt restores its own (frameless) styles after fullscreen.
+            QTimer::singleShot(0, this, &MainWindow::applyNativeFrame);
+        }
+        if (isMinimized() && mediaLoaded_) {
+            rememberCurrentProgress();
+        }
+        updateWindowState();
+    }
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    applyNativeFrame();
+    updateWindowState();
+}
 
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
-
-    if (transitionOverlay_) {
-        transitionOverlay_->setGeometry(appRoot_->rect());
-        if (transitionOverlay_->isVisible()) transitionOverlay_->raise();
-    }
-
     if (root_) layoutOverlayWidgets();
 }
-
 
 void MainWindow::seekReleased()
 {
@@ -1563,7 +2250,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         toggleFullscreen();
         break;
     case Qt::Key_Escape:
-        if (isFullScreen()) {
+        if (fullscreenMode_) {
             toggleFullscreen();
         } else {
             QMainWindow::keyPressEvent(event);

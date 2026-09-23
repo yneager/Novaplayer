@@ -39,3 +39,97 @@ body{overflow:hidden}
 .lambda-settings[data-focus="audio"] .lambda-group:not([data-group="audio"]),
 .lambda-settings[data-focus="subtitles"] .lambda-group:not([data-group="subtitles"]){display:none}
 @media(max-width:720px){.lambda-settings{right:12px;bottom:174px;width:calc(100% - 24px)}}
+
+/* ==== LAMBDA Player v0.2.2 polish ========================================
+   Window-filling responsive layout, native video mask, window states. */
+:root{--shell-pad:clamp(8px,1vw,14px);--player-radius:clamp(18px,2vw,30px)}
+html,body{height:100%}
+body{display:block;min-height:0;overflow:hidden}
+.page-shell{position:relative;width:100vw!important;height:100vh;padding:var(--shell-pad)!important;transition:padding .3s var(--ease)}
+.drag-strip{position:absolute;left:0;right:0;top:0;height:max(var(--shell-pad),6px)}
+/* The card fills the window. The last, huge spread shadow paints the page
+   background everywhere outside the rounded card, which masks the square
+   corners of the OpenGL video surface underneath with anti-aliased edges. */
+.player{width:100%;height:100%;min-height:0!important;aspect-ratio:auto!important;border-radius:var(--player-radius)!important;border:1px solid rgba(255,255,255,.11)!important;box-shadow:0 24px 70px rgba(0,0,0,.45),inset 0 1px rgba(255,255,255,.08),0 0 0 200vmax var(--bg)!important;transition:border-radius .3s var(--ease),border-color .3s var(--ease)}
+.player.media-active{border-color:rgba(255,255,255,.08)!important}
+html.is-maximized{--shell-pad:clamp(6px,.7vw,10px)}
+html.is-fullscreen,html.is-mini{--shell-pad:0px}
+html.is-fullscreen .player,html.is-mini .player{border-radius:0!important;border:0!important;box-shadow:none!important}
+html.is-fullscreen .corner-mark,html.is-mini .corner-mark,html.is-fullscreen .drag-strip{display:none}
+
+/* Chrome show/hide (fullscreen auto-hide) slides as well as fades. */
+.topbar,.side-rail,.control-deck,.quality-badge,.corner-mark{transition:opacity .32s var(--ease),transform .38s var(--ease),border-color .4s var(--ease),background .4s var(--ease)}
+.player.lambda-chrome-hidden .topbar{transform:translateY(-14px)}
+.player.lambda-chrome-hidden .control-deck{transform:translateY(16px)}
+.player.lambda-chrome-hidden .side-rail{transform:translate(-14px,-50%)}
+.player.lambda-chrome-hidden,.player.lambda-chrome-hidden *{cursor:none!important}
+
+/* Buttons: pressed state and disabled state everywhere. */
+.icon-button:disabled,.text-button:disabled{opacity:.3;cursor:default;transform:none!important;pointer-events:none}
+.icon-button.active,.text-button.active{color:var(--cyan-2);background:rgba(121,249,232,.1);border-color:rgba(121,249,232,.24)}
+.mini-button.active{color:#ffb35c}
+.top-actions{gap:6px}
+.brand-chip{transition:background .25s var(--ease),border-color .25s var(--ease),transform .25s var(--ease)}
+.brand-chip:hover{background:rgba(255,255,255,.07);border-color:rgba(121,249,232,.22);transform:translateY(-1px)}
+.brand-chip:active{transform:scale(.97)}
+.brand-chip:focus-visible{outline:2px solid rgba(120,245,231,.55);outline-offset:2px}
+
+/* Timeline: buffered range, scrubbing, hover time preview. */
+.buffered{width:0;transition:width .4s linear}
+.timeline{height:5px;transition:height .2s var(--ease)}
+.timeline:hover,.timeline.scrubbing{height:7px}
+.timeline::before{content:"";position:absolute;left:0;right:0;top:-9px;bottom:-9px}
+.timeline.scrubbing .thumb{transform:translateY(-50%) scale(1.35)}
+.timeline-tip{position:absolute;z-index:6;bottom:15px;left:0;transform:translateX(-50%) translateY(4px);padding:4px 7px;border-radius:7px;background:rgba(10,13,19,.92);border:1px solid rgba(255,255,255,.12);color:#e9fffb;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s var(--ease),transform .15s var(--ease)}
+.timeline.tip-visible .timeline-tip{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Loading state for the center button. */
+.player.is-loading .play-inner svg{opacity:0}
+.player.is-loading .play-inner::after{content:"";position:absolute;inset:18px;border-radius:50%;border:2.5px solid rgba(4,17,14,.18);border-top-color:#04110e;animation:lambdaSpin .8s linear infinite}
+@keyframes lambdaSpin{to{transform:rotate(360deg)}}
+.center-copy strong{max-width:min(520px,70vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* RIFE indicator on the quality badge. */
+.quality-badge.rife-on{border-color:rgba(121,249,232,.28);color:var(--cyan-2)}
+
+/* Settings panel: animated, themed scrollbar, focused groups. */
+.lambda-settings{transform-origin:bottom right;transition:opacity .26s var(--ease),transform .3s var(--ease)}
+.lambda-settings-close{transition:background .2s var(--ease),color .2s var(--ease),transform .2s var(--ease)}
+.lambda-settings-close:hover{color:#fff;background:rgba(255,255,255,.1)}
+.lambda-settings-close:active{transform:scale(.92)}
+.lambda-option{transition:color .2s var(--ease),background .2s var(--ease),border-color .2s var(--ease),transform .15s var(--ease)}
+.lambda-option:active:not(:disabled){transform:scale(.97)}
+.lambda-settings[data-focus="speed"] .lambda-group:not([data-group="speed"]){display:none}
+.lambda-settings::-webkit-scrollbar{width:10px}
+.lambda-settings::-webkit-scrollbar-thumb{border-width:3px;border-right-width:3px}
+
+/* Short windows: keep controls clear of each other. */
+@media (max-height:640px){.side-rail{display:none}.quality-badge{display:none}.center-state{gap:12px}.play-core{transform:scale(.82)}}
+@media (max-height:520px){.center-copy{display:none}.scene-pill{display:none}}
+
+/* Mini player (always on top): compact chrome that appears on hover. */
+html.is-mini .side-rail,html.is-mini .quality-badge,html.is-mini .center-copy,html.is-mini .scene-pill,
+html.is-mini .timeline-labels,html.is-mini .media-title .eyebrow,html.is-mini .chapter-row,
+html.is-mini .top-actions .icon-button,html.is-mini .control-cluster.right .icon-button:not([aria-label="Mini player"]),
+html.is-mini .control-cluster.right .text-button,html.is-mini .timecode,html.is-mini .volume-pill{display:none!important}
+html.is-mini .topbar{top:8px;left:8px;right:8px;min-height:0;padding:5px 6px 5px 7px;gap:8px;border-radius:14px}
+html.is-mini .brand-chip{height:32px;width:32px;padding:0;justify-content:center;border-radius:10px}
+html.is-mini .brand-chip>span:last-child{display:none}
+html.is-mini .brand-mark{width:22px;height:22px}
+html.is-mini .media-title strong{font-size:11px}
+html.is-mini .window-controls{border-left:0;padding-left:0;margin-left:0}
+html.is-mini .wc-btn{width:28px;height:28px;border-radius:9px}
+html.is-mini .control-deck{left:8px;right:8px;bottom:8px;min-height:0;padding:10px 10px 8px;border-radius:15px}
+html.is-mini .timeline-wrap{padding-bottom:8px}
+html.is-mini .controls-row{grid-template-columns:1fr auto}
+html.is-mini .icon-button{width:32px;height:32px;border-radius:10px}
+html.is-mini .center-state{transform:translate(-50%,-50%) scale(.62)}
+html.is-mini .lambda-settings{display:none}
+html.is-mini .player:not(:hover) .topbar,html.is-mini .player:not(:hover) .control-deck{opacity:0;pointer-events:none}
+html.is-mini .player:not(:hover) .topbar{transform:translateY(-8px)}
+html.is-mini .player:not(:hover) .control-deck{transform:translateY(8px)}
+
+/* Glass panels over a playing video: the page cannot blur the native video
+   underneath, so raise opacity for legibility over bright frames. */
+.player.media-active .glass-panel{background:linear-gradient(180deg,rgba(20,23,32,.84),rgba(10,12,18,.78));border-color:rgba(255,255,255,.1)}
+.player.media-active .quality-badge{background:rgba(12,14,20,.8)}

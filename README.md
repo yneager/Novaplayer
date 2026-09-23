@@ -1,10 +1,35 @@
 # LAMBDA Player
 
-**Current version: v0.2.1**
+**Current version: v0.2.2**
 
 LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
+
+### v0.2.2 — Working video + polished window and UI
+
+**Fixed**
+- Opening a video works again. mpv events were lost at startup, so the player stayed on "LOADING" at 00:00 forever. The event handler is now connected before mpv is created.
+- Video is visible under the Vui controls. libmpv now draws through its official OpenGL render API into a Qt widget (`vo=libmpv`) instead of a separate native window. The transparent web controls could not be shown over a native window.
+
+**Window**
+- Custom frameless window with themed minimize / maximize / close buttons in the Home and Player top bars.
+- Windows 11 rounded corners and shadow; native drag, Aero Snap, double-click to maximize and resize from every edge.
+- Mini player: a small always-on-top window sized to the video; Esc returns to the normal window.
+
+**UI polish**
+- The player fills the window at every size, with a rounded, anti-aliased video frame; layout adapts to short and narrow windows.
+- Thin cyan themed scrollbars instead of the default Windows scrollbar.
+- Smooth page fades between Home and Player; animated settings panel, toasts, auto-hiding fullscreen controls and hidden cursor.
+- Subtitles move above the control bar while the controls are visible.
+- Loading spinner, "Finished — press play to watch again" state, timeline hover time and buffered range, tooltips everywhere.
+
+**Every button now does something real**
+- Home: Search opens a video, the folder button plays a folder, the λ button shows About with shortcuts and licenses.
+- Home: "Continue watching" shows your recent files with progress, and they resume where you stopped. "Resume/Play recent" continues playback.
+- Home: nav links scroll to their sections and the rail arrows scroll their rail.
+- Player: Next plays the next video in the same folder, and the mini-player button toggles the mini player.
+- Errors such as unplayable files and interpolation problems appear as themed toasts instead of Windows message boxes.
 
 ### v0.2.1 — LAMBDA Player / Complete Vui CSS
 

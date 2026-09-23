@@ -12,6 +12,18 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
+## Latest Fix: RIFE Activation (after user report)
+The first RIFE build (PR #1) was built by CI. When the user selected RIFE 2× it failed with "mpv could not create the VapourSynth filter: error running command".
+
+Root cause: mpv on Windows caches the environment on its first `getenv()` call (`osdep/io.c`, `init_getenv`, run once). NovaPlayer set `VSSCRIPT_PATH` only when RIFE was selected, long after `mpv_create()`, so mpv never saw it and `dlopen("VSScript.dll")` failed. The earlier local tests used `mpv.exe` with the variable set before launch, which is why they did not catch it.
+
+Fix and verification: `InterpolationController::configureProcessEnvironment()` is now called in `MainWindow::initMpv()` before `mpv_create()`. `setMode()` additionally preloads `vsscript.dll` by full path with `LoadLibraryExW`. A ctypes harness driving the pinned `libmpv-2.dll` in-process confirmed three results:
+- the old order reproduces the user's error;
+- setting the variable early gives 47.9996 fps;
+- preloading only gives 47.9996 fps.
+
+This must still be confirmed in `NovaPlayer.exe` by the user.
+
 ## Runtime Verification Of The Base Player (user-confirmed)
 The user manually tested the build of commit `3314ef13` (Actions run #10) and confirmed these work correctly:
 
@@ -37,7 +49,7 @@ Everything from the base player above, plus:
 ### How the filter is added/removed
 `InterpolationController` (`src/interpolationcontroller.{h,cpp}`):
 1. Checks that `rife/rife.vpy`, `rife/librife_windows_x86-64.dll`, `rife/MiscFilters.dll`, `rife/models/rife-v4.6_ensembleFalse/flownet.{bin,param}`, `vapoursynth/python.exe`, `vapoursynth/python3.dll` and `vapoursynth/Lib/site-packages/vapoursynth/vsscript.dll` exist next to `NovaPlayer.exe`.
-2. Sets `VSSCRIPT_PATH` to the bundled `vsscript.dll` (`_wputenv_s`; libmpv shares the UCRT so its `getenv` sees it).
+2. `VSSCRIPT_PATH` is set to the bundled `vsscript.dll` at startup, **before `mpv_create()`**, because mpv caches the environment. When RIFE is selected, `vsscript.dll` is also preloaded by full path.
 3. Runs `vf add @novarife:vapoursynth=file=%N%<rife.vpy>:user-data=%N%<rife dir>` (mpv `%len%` quoting because Windows paths contain `:`).
 4. Off runs `vf remove @novarife` — only that label; unrelated filters are never cleared.
 
@@ -134,6 +146,8 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 - Never clear the whole mpv `vf` chain; only remove `@novarife`.
 - Do not change dependency pins without updating hashes, `THIRD_PARTY_NOTICES.md` and this file.
 - RIFE must stay optional: any failure must leave normal playback working and the combo on Off.
+- Any environment variable meant for mpv or its filters must be set **before `mpv_create()`**; mpv on Windows never re-reads the environment.
+- Test mpv integration changes in-process against `libmpv-2.dll` (for example with a ctypes harness), not only with `mpv.exe` launched with a prepared environment.
 
 ## Next Recommended Tasks
 1. Confirm the CI run for this commit passed; download the artifact and runtime-test in `NovaPlayer.exe`: RIFE 2× on a 24 fps and a 30 fps file (use mpv stats / visual smoothness), seek (click, drag, arrows), pause, embedded + external subtitles, audio-track switch, mute/volume, fullscreen overlay, Off → normal playback.

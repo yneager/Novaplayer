@@ -2,6 +2,12 @@
 
 This file records notable completed work visible in the repository history.
 
+## 2026-09-23 — RIFE 2× activation fix
+
+### Fixed
+- Selecting RIFE 2× failed with "mpv could not create the VapourSynth filter: error running command" (user report on the first RIFE build). Cause: on Windows mpv snapshots the process environment once, on its first `getenv()` call (`osdep/io.c`), so the `VSSCRIPT_PATH` NovaPlayer set when RIFE was selected was never seen and mpv could not find `VSScript.dll`. Reproduced with the pinned `libmpv-2.dll`.
+- Fix: `VSSCRIPT_PATH` is now set before `mpv_create()`, and `vsscript.dll` is additionally preloaded by full path before the filter is added, so mpv's by-name fallback finds it. Both variants were verified against the pinned `libmpv-2.dll` (24 fps → 48 fps); the old order still reproduces the error.
+
 ## 2026-09-23 — RIFE 2× frame interpolation (first milestone)
 
 ### Added

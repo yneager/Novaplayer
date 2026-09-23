@@ -185,6 +185,9 @@ void MainWindow::buildUi()
 
 void MainWindow::initMpv()
 {
+    // Before mpv_create(): mpv snapshots the environment on first use.
+    InterpolationController::configureProcessEnvironment();
+
     mpv_ = mpv_create();
     if (!mpv_) {
         throw std::runtime_error("Could not create libmpv context.");

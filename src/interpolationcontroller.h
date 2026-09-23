@@ -31,6 +31,10 @@ public:
     // failures (script errors, missing GPU, ...) can be detected.
     void handleLogMessage(const QString &prefix, const QString &level, const QString &text);
 
+    // Points VSSCRIPT_PATH at the bundled VapourSynth. Must be called before
+    // mpv_create(): mpv caches the process environment on first use.
+    static void configureProcessEnvironment();
+
     // Directory that holds rife.vpy, the plugin DLLs and the models.
     static QString runtimeDirectory();
     // Directory that holds the embedded Python + VapourSynth runtime.
@@ -43,7 +47,8 @@ signals:
 
 private:
     bool checkRuntimeFiles(QString *error) const;
-    void prepareEnvironment() const;
+    bool preloadVsScript(QString *error) const;
+    static QString vsScriptPath();
     bool addFilter(QString *error);
     void removeFilter();
     static QString quoted(const QString &value);

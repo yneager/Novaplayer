@@ -26,6 +26,9 @@ The README keeps the user-facing permanent version history. These chronological 
 - Quality badge uses detected video height and current interpolation mode instead of hardcoding 4K/HDR.
 - PiP is visibly present but disabled because v0.2.1 does not contain a verified PiP implementation.
 
+### Fixed
+- Fixed a v0.2.1 startup stack overflow: the new overlay layout path recursively called `layoutOverlayWidgets() → setFullscreenChromeVisible() → updateCenterState() → layoutOverlayWidgets()`. The visibility helper now updates the center overlay directly without re-entering layout.
+
 ### Preserved
 - Existing MKV seeking, audio/subtitle switching, external subtitles, playback speed, hardware decoding, fullscreen behavior and current RIFE modes.
 

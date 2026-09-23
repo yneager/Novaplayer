@@ -26,6 +26,11 @@ The user asked not to use the name "2×". Labels are refreshed on `MPV_EVENT_FIL
 
 `rife.vpy` receives `user-data = "<double|60>|<runtime dir>"`. In 60 mode it uses `factor = 60 / snapped container_fps`, because mpv's `video_in` carries no fps and the plugin's `fps_num` option would throw. Verified with the pinned `mpv.exe`: 24, 25 and 30 fps each became 60 fps, and 60 fps sources were refused cleanly. The C++ UI is build-verified by CI only.
 
+### v0.2.1 startup crash fix
+The first v0.2.1 UI build compiled successfully in Actions run #16 but the user reported that `NovaPlayer.exe` would not run. Code review found a deterministic startup recursion: `layoutOverlayWidgets()` called `setFullscreenChromeVisible(true)`, which called `updateCenterState()`, which called `layoutOverlayWidgets()` again. This repeats until stack overflow before the UI becomes usable.
+
+The fix removes the callback from `setFullscreenChromeVisible()`; that helper now updates center-state visibility directly. Keep the layout/state functions one-way to avoid reintroducing recursive geometry updates.
+
 ### v0.2.1 UI control mapping
 All controls from the supplied Vui concept are represented:
 

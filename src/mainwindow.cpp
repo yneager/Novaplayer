@@ -1061,8 +1061,14 @@ void MainWindow::setFullscreenChromeVisible(bool visible)
     sideRail_->setVisible(visible);
     qualityBadge_->setVisible(visible);
 
-    if (visible) {
-        updateCenterState();
+    // Do not call updateCenterState() here. layoutOverlayWidgets() calls this
+    // helper, while updateCenterState() calls layoutOverlayWidgets(); calling
+    // back into updateCenterState() would recurse until stack overflow during
+    // application startup.
+    if (!visible) {
+        centerState_->hide();
+    } else if (!mediaLoaded_ || paused_) {
+        centerState_->show();
     } else {
         centerState_->hide();
     }

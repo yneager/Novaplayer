@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "interpolationcontroller.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -10,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
@@ -93,12 +95,23 @@ void MainWindow::buildUi()
 
     loadSubtitleButton_ = new QPushButton("Load Subtitle", controls_);
 
+    // Frame interpolation: Off (default, no RIFE overhead) or RIFE 2x via
+    // mpv's vapoursynth filter. See InterpolationController.
+    interpolationMode_ = new QComboBox(controls_);
+    interpolationMode_->addItem("Off");
+    interpolationMode_->addItem(QString::fromUtf8("RIFE 2×"));
+    interpolationMode_->setCurrentIndex(0);
+    interpolationMode_->setToolTip("Frame interpolation (RIFE v4.6 via VapourSynth, Vulkan GPU)");
+
     trackRow->addWidget(new QLabel("Audio", controls_));
     trackRow->addWidget(audioTrack_);
     trackRow->addSpacing(8);
     trackRow->addWidget(new QLabel("Subtitles", controls_));
     trackRow->addWidget(subtitleTrack_);
     trackRow->addWidget(loadSubtitleButton_);
+    trackRow->addSpacing(8);
+    trackRow->addWidget(new QLabel("Frame Interpolation", controls_));
+    trackRow->addWidget(interpolationMode_);
     trackRow->addStretch();
 
     controlsLayout->addLayout(trackRow);
@@ -145,6 +158,7 @@ void MainWindow::buildUi()
     connect(speed_, &QComboBox::currentIndexChanged, this, &MainWindow::speedChanged);
     connect(audioTrack_, &QComboBox::currentIndexChanged, this, &MainWindow::audioTrackChanged);
     connect(subtitleTrack_, &QComboBox::currentIndexChanged, this, &MainWindow::subtitleTrackChanged);
+    connect(interpolationMode_, &QComboBox::currentIndexChanged, this, &MainWindow::interpolationModeChanged);
 
     fullscreenControlsTimer_ = new QTimer(this);
     fullscreenControlsTimer_->setSingleShot(true);
@@ -194,6 +208,15 @@ void MainWindow::initMpv()
     mpv_observe_property(mpv_, 2, "duration", MPV_FORMAT_DOUBLE);
     mpv_observe_property(mpv_, 3, "pause", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv_, 4, "mute", MPV_FORMAT_FLAG);
+
+    // Error-level log messages are needed to notice when mpv disables the
+    // RIFE VapourSynth filter after a script/runtime failure.
+    mpv_request_log_messages(mpv_, "error");
+
+    interpolation_ = new InterpolationController(mpv_, this);
+    connect(interpolation_, &InterpolationController::deactivated,
+            this, &MainWindow::interpolationDeactivated);
+
     mpv_set_wakeup_callback(mpv_, &MainWindow::wakeup, this);
 
     setMpvPropertyDouble("volume", 80);
@@ -251,7 +274,50 @@ void MainWindow::handleEvent(mpv_event *event)
         QTimer::singleShot(0, this, &MainWindow::refreshTracks);
     } else if (event->event_id == MPV_EVENT_END_FILE) {
         playButton_->setText("Play");
+    } else if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
+        auto *message = static_cast<mpv_event_log_message *>(event->data);
+        if (message && interpolation_) {
+            interpolation_->handleLogMessage(QString::fromUtf8(message->prefix),
+                                             QString::fromUtf8(message->level),
+                                             QString::fromUtf8(message->text));
+        }
     }
+}
+
+void MainWindow::interpolationModeChanged(int index)
+{
+    if (!interpolation_ || index < 0) {
+        return;
+    }
+
+    const auto mode = index == 1 ? InterpolationController::Mode::Rife2x
+                                 : InterpolationController::Mode::Off;
+
+    QString error;
+    if (!interpolation_->setMode(mode, &error)) {
+        const QSignalBlocker blocker(interpolationMode_);
+        interpolationMode_->setCurrentIndex(0);
+        showInterpolationError(error);
+    }
+}
+
+void MainWindow::interpolationDeactivated(const QString &reason)
+{
+    const QSignalBlocker blocker(interpolationMode_);
+    interpolationMode_->setCurrentIndex(0);
+    showInterpolationError(reason);
+}
+
+void MainWindow::showInterpolationError(const QString &message)
+{
+    // Deferred so the dialog never runs inside mpv event processing.
+    QTimer::singleShot(0, this, [this, message] {
+        QMessageBox::warning(
+            this,
+            "Frame interpolation",
+            QString::fromUtf8("RIFE 2× could not be enabled. Playback continues without interpolation.\n\n%1")
+                .arg(message));
+    });
 }
 
 QString MainWindow::mpvStringProperty(const QByteArray &name) const

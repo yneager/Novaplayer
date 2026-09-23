@@ -18,6 +18,7 @@ class QSlider;
 class QTimer;
 class QVBoxLayout;
 class QWidget;
+class InterpolationController;
 
 class MainWindow final : public QMainWindow
 {
@@ -51,6 +52,8 @@ private slots:
     void speedChanged(int index);
     void audioTrackChanged(int index);
     void subtitleTrackChanged(int index);
+    void interpolationModeChanged(int index);
+    void interpolationDeactivated(const QString &reason);
 
 private:
     static void wakeup(void *ctx);
@@ -73,9 +76,11 @@ private:
     void setMpvPropertyInt64(const char *name, qint64 value);
     void command(const QStringList &args);
     void updateTimeLabel();
+    void showInterpolationError(const QString &message);
     static QString formatTime(double seconds);
 
     mpv_handle *mpv_ = nullptr;
+    InterpolationController *interpolation_ = nullptr;
     QWidget *root_ = nullptr;
     QWidget *video_ = nullptr;
     QWidget *controls_ = nullptr;
@@ -90,6 +95,7 @@ private:
     QComboBox *speed_ = nullptr;
     QComboBox *audioTrack_ = nullptr;
     QComboBox *subtitleTrack_ = nullptr;
+    QComboBox *interpolationMode_ = nullptr;
     QTimer *fullscreenControlsTimer_ = nullptr;
     QPropertyAnimation *controlsSlide_ = nullptr;
     int controlsHeight_ = 0;

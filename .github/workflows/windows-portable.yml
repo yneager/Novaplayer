@@ -15,14 +15,18 @@ jobs:
           version: "6.8.3"
           arch: "win64_msvc2022_64"
           cache: true
-      - name: Download libmpv
+      - name: Download libmpv (pinned shinchiro/mpv-winbuild-cmake 20260923)
         shell: pwsh
         run: |
+          # Pinned: this exact build was verified to include mpv's VapourSynth filter
+          # (-Dvapoursynth=enabled) and to load VSScript.dll at runtime.
+          $tag="20260923"
+          $asset="mpv-dev-x86_64-20260923-git-6fd80b2003.7z"
+          $sha="372F29C292D0C8B4CE916225739E5872E35B8E11F3F4590C285BAED8BA551100"
           $h=@{"User-Agent"="NovaPlayer-GitHub-Actions"}
-          $r=Invoke-RestMethod -Headers $h -Uri "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-          $a=$r.assets|Where-Object {$_.name -match '^mpv-dev-x86_64-\d+.*\.7z$'}|Where-Object {$_.name -notmatch 'v3|lgpl'}|Select-Object -First 1
-          if(!$a){throw "mpv-dev archive not found"}
-          Invoke-WebRequest -Headers $h -Uri $a.browser_download_url -OutFile mpv-dev.7z
+          Invoke-WebRequest -Headers $h -Uri "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$tag/$asset" -OutFile mpv-dev.7z
+          $actual=(Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash
+          if($actual -ne $sha){throw "libmpv SHA-256 mismatch: expected $sha got $actual"}
           New-Item -ItemType Directory -Force deps\mpv|Out-Null
           7z x mpv-dev.7z "-odeps\mpv" -y
           $c=Get-ChildItem deps\mpv -Recurse -Filter client.h|Where-Object {$_.FullName -match '[\\/]mpv[\\/]client\.h$'}|Select-Object -First 1
@@ -49,6 +53,25 @@ jobs:
           Copy-Item build\Release\NovaPlayer.exe portable\
           Copy-Item "$env:MPV_DLL" portable\libmpv-2.dll
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --compiler-runtime portable\NovaPlayer.exe
+      - name: Bundle MSVC runtime DLLs (app-local, needed by Qt, VapourSynth and the RIFE plugin)
+        shell: pwsh
+        run: |
+          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $crt=Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory|Sort-Object FullName -Descending|Select-Object -First 1
+          if(!$crt){throw "MSVC redistributable CRT directory not found"}
+          foreach($n in 'msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','msvcp140_atomic_wait.dll','msvcp140_codecvt_ids.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll'){
+            $p=Join-Path $crt.FullName $n
+            if(Test-Path $p){Copy-Item $p portable\ -Force}
+          }
+          Get-ChildItem portable\*.dll|Select-Object Name,Length
+      - name: Assemble RIFE / VapourSynth runtime (pinned, SHA-256 verified)
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .github\scripts\assemble-rife-runtime.ps1 -PortableDir portable
+      - name: List package
+        shell: pwsh
+        run: |
+          Get-ChildItem portable -Recurse -File|Where-Object {$_.FullName -notmatch '\\vapoursynth\\[^\\]+$'}|Select-Object @{n='Path';e={$_.FullName.Substring((Resolve-Path portable).Path.Length)}},Length|Format-Table -AutoSize
+          "Total size: {0:N1} MB" -f ((Get-ChildItem portable -Recurse -File|Measure-Object Length -Sum).Sum/1MB)
       - uses: actions/upload-artifact@v4
         with:
           name: NovaPlayer-Windows-x64

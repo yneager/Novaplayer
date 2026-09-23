@@ -40,6 +40,7 @@ protected:
 
 private slots:
     void openFile();
+    void loadSubtitle();
     void togglePause();
     void toggleMute();
     void toggleFullscreen();
@@ -47,6 +48,8 @@ private slots:
     void seekReleased();
     void volumeChanged(int value);
     void speedChanged(int index);
+    void audioTrackChanged(int index);
+    void subtitleTrackChanged(int index);
 
 private:
     static void wakeup(void *ctx);
@@ -54,6 +57,10 @@ private:
     void buildUi();
     void initMpv();
     void handleEvent(mpv_event *event);
+    void refreshTracks();
+    QString mpvStringProperty(const QByteArray &name) const;
+    bool mpvInt64Property(const QByteArray &name, qint64 &value) const;
+    bool mpvFlagProperty(const QByteArray &name, bool &value) const;
     void enterFullscreenControlsMode();
     void leaveFullscreenControlsMode();
     void showFullscreenControls();
@@ -74,10 +81,13 @@ private:
     QPushButton *playButton_ = nullptr;
     QPushButton *muteButton_ = nullptr;
     QPushButton *fullscreenButton_ = nullptr;
+    QPushButton *loadSubtitleButton_ = nullptr;
     QSlider *seek_ = nullptr;
     QSlider *volume_ = nullptr;
     QLabel *timeLabel_ = nullptr;
     QComboBox *speed_ = nullptr;
+    QComboBox *audioTrack_ = nullptr;
+    QComboBox *subtitleTrack_ = nullptr;
     QTimer *fullscreenControlsTimer_ = nullptr;
     QPropertyAnimation *controlsSlide_ = nullptr;
     int controlsHeight_ = 0;

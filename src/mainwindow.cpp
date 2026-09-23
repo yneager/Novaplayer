@@ -14,9 +14,11 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QTimer>
 #include <QUrl>
+#include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -75,6 +77,30 @@ void MainWindow::buildUi()
     connect(seek_, &QSlider::sliderReleased, this, &MainWindow::seekReleased);
     controlsLayout->addWidget(seek_);
 
+    auto *trackRow = new QHBoxLayout;
+    trackRow->setContentsMargins(0, 0, 0, 0);
+
+    audioTrack_ = new QComboBox(controls_);
+    audioTrack_->setMinimumWidth(190);
+    audioTrack_->addItem("No audio tracks");
+    audioTrack_->setEnabled(false);
+
+    subtitleTrack_ = new QComboBox(controls_);
+    subtitleTrack_->setMinimumWidth(190);
+    subtitleTrack_->addItem("Subtitles Off", QVariant::fromValue<qlonglong>(-1));
+
+    loadSubtitleButton_ = new QPushButton("Load Subtitle", controls_);
+
+    trackRow->addWidget(new QLabel("Audio", controls_));
+    trackRow->addWidget(audioTrack_);
+    trackRow->addSpacing(8);
+    trackRow->addWidget(new QLabel("Subtitles", controls_));
+    trackRow->addWidget(subtitleTrack_);
+    trackRow->addWidget(loadSubtitleButton_);
+    trackRow->addStretch();
+
+    controlsLayout->addLayout(trackRow);
+
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setContentsMargins(0, 0, 0, 0);
 
@@ -109,11 +135,14 @@ void MainWindow::buildUi()
     setCentralWidget(root_);
 
     connect(openButton, &QPushButton::clicked, this, &MainWindow::openFile);
+    connect(loadSubtitleButton_, &QPushButton::clicked, this, &MainWindow::loadSubtitle);
     connect(playButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
     connect(muteButton_, &QPushButton::clicked, this, &MainWindow::toggleMute);
     connect(fullscreenButton_, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
     connect(volume_, &QSlider::valueChanged, this, &MainWindow::volumeChanged);
     connect(speed_, &QComboBox::currentIndexChanged, this, &MainWindow::speedChanged);
+    connect(audioTrack_, &QComboBox::currentIndexChanged, this, &MainWindow::audioTrackChanged);
+    connect(subtitleTrack_, &QComboBox::currentIndexChanged, this, &MainWindow::subtitleTrackChanged);
 
     fullscreenControlsTimer_ = new QTimer(this);
     fullscreenControlsTimer_->setSingleShot(true);
@@ -214,9 +243,188 @@ void MainWindow::handleEvent(mpv_event *event)
     } else if (event->event_id == MPV_EVENT_FILE_LOADED) {
         paused_ = false;
         playButton_->setText("Pause");
+        QTimer::singleShot(0, this, &MainWindow::refreshTracks);
     } else if (event->event_id == MPV_EVENT_END_FILE) {
         playButton_->setText("Play");
     }
+}
+
+QString MainWindow::mpvStringProperty(const QByteArray &name) const
+{
+    if (!mpv_) {
+        return {};
+    }
+
+    char *value = mpv_get_property_string(mpv_, name.constData());
+    if (!value) {
+        return {};
+    }
+
+    const QString result = QString::fromUtf8(value);
+    mpv_free(value);
+    return result;
+}
+
+bool MainWindow::mpvInt64Property(const QByteArray &name, qint64 &value) const
+{
+    if (!mpv_) {
+        return false;
+    }
+
+    int64_t raw = 0;
+    if (mpv_get_property(mpv_, name.constData(), MPV_FORMAT_INT64, &raw) < 0) {
+        return false;
+    }
+
+    value = static_cast<qint64>(raw);
+    return true;
+}
+
+bool MainWindow::mpvFlagProperty(const QByteArray &name, bool &value) const
+{
+    if (!mpv_) {
+        return false;
+    }
+
+    int raw = 0;
+    if (mpv_get_property(mpv_, name.constData(), MPV_FORMAT_FLAG, &raw) < 0) {
+        return false;
+    }
+
+    value = raw != 0;
+    return true;
+}
+
+void MainWindow::refreshTracks()
+{
+    if (!mpv_) {
+        return;
+    }
+
+    const QSignalBlocker audioBlocker(audioTrack_);
+    const QSignalBlocker subtitleBlocker(subtitleTrack_);
+
+    audioTrack_->clear();
+    subtitleTrack_->clear();
+    subtitleTrack_->addItem("Off", QVariant::fromValue<qlonglong>(-1));
+
+    qint64 trackCount = 0;
+    mpvInt64Property("track-list/count", trackCount);
+
+    int selectedAudioIndex = -1;
+    int selectedSubtitleIndex = 0;
+    int audioNumber = 0;
+    int subtitleNumber = 0;
+
+    for (qint64 i = 0; i < trackCount; ++i) {
+        const QByteArray prefix = "track-list/" + QByteArray::number(i) + "/";
+        const QString type = mpvStringProperty(prefix + "type");
+
+        if (type != "audio" && type != "sub") {
+            continue;
+        }
+
+        qint64 id = -1;
+        if (!mpvInt64Property(prefix + "id", id)) {
+            continue;
+        }
+
+        const QString title = mpvStringProperty(prefix + "title").trimmed();
+        const QString language = mpvStringProperty(prefix + "lang").trimmed();
+        bool selected = false;
+        mpvFlagProperty(prefix + "selected", selected);
+
+        QStringList details;
+        if (!language.isEmpty()) {
+            details << language;
+        }
+        if (!title.isEmpty() && title.compare(language, Qt::CaseInsensitive) != 0) {
+            details << title;
+        }
+
+        if (type == "audio") {
+            ++audioNumber;
+            QString label = QString("Audio %1").arg(audioNumber);
+            if (!details.isEmpty()) {
+                label += QString(" — %1").arg(details.join(" · "));
+            }
+
+            audioTrack_->addItem(label, QVariant::fromValue<qlonglong>(id));
+            if (selected) {
+                selectedAudioIndex = audioTrack_->count() - 1;
+            }
+        } else {
+            ++subtitleNumber;
+            QString label = QString("Subtitle %1").arg(subtitleNumber);
+            if (!details.isEmpty()) {
+                label += QString(" — %1").arg(details.join(" · "));
+            }
+
+            subtitleTrack_->addItem(label, QVariant::fromValue<qlonglong>(id));
+            if (selected) {
+                selectedSubtitleIndex = subtitleTrack_->count() - 1;
+            }
+        }
+    }
+
+    if (audioTrack_->count() == 0) {
+        audioTrack_->addItem("No audio tracks");
+        audioTrack_->setEnabled(false);
+    } else {
+        audioTrack_->setEnabled(true);
+        audioTrack_->setCurrentIndex(selectedAudioIndex >= 0 ? selectedAudioIndex : 0);
+    }
+
+    subtitleTrack_->setCurrentIndex(selectedSubtitleIndex);
+}
+
+void MainWindow::audioTrackChanged(int index)
+{
+    if (index < 0 || !audioTrack_->isEnabled()) {
+        return;
+    }
+
+    bool ok = false;
+    const qlonglong id = audioTrack_->itemData(index).toLongLong(&ok);
+    if (ok) {
+        command({"set", "aid", QString::number(id)});
+    }
+}
+
+void MainWindow::subtitleTrackChanged(int index)
+{
+    if (index < 0) {
+        return;
+    }
+
+    bool ok = false;
+    const qlonglong id = subtitleTrack_->itemData(index).toLongLong(&ok);
+    if (!ok) {
+        return;
+    }
+
+    if (id < 0) {
+        command({"set", "sid", "no"});
+    } else {
+        command({"set", "sid", QString::number(id)});
+    }
+}
+
+void MainWindow::loadSubtitle()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        "Load subtitle",
+        {},
+        "Subtitle files (*.srt *.ass *.ssa *.vtt *.sub *.idx *.sup);;All files (*.*)");
+
+    if (path.isEmpty()) {
+        return;
+    }
+
+    command({"sub-add", path, "select"});
+
+    QTimer::singleShot(250, this, &MainWindow::refreshTracks);
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
@@ -250,8 +458,6 @@ void MainWindow::enterFullscreenControlsMode()
     mainLayout_->removeWidget(controls_);
     controls_->setParent(root_);
 
-    // Make the control panel its own native child window so it can reliably
-    // stay above libmpv's native video HWND on Windows.
     controls_->setAttribute(Qt::WA_NativeWindow);
     controls_->winId();
 

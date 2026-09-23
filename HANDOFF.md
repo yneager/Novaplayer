@@ -42,7 +42,7 @@ The native Vui player layer is restored/refined around the existing controls: Ho
 - CI now launches the packaged `NovaPlayer.exe` for a short startup smoke test after assembling the portable runtime; an immediate crash/startup recursion fails the workflow.
 
 ### Verification status
-- GitHub Actions run #20 compiled and packaged the Vui shell successfully. The follow-up workflow commit adds a packaged-app startup smoke test and must also pass.
+- GitHub Actions run #20 compiled and packaged the Vui shell successfully. A follow-up CI change adds a packaged-app startup smoke test; the first workflow edit had a YAML-generation error and was corrected without changing application source.
 - Runtime behavior must still be tested from the Windows artifact; build success is not runtime proof.
 
 ## Previous Change: README Version History + Frame-Rate Labels / 60 fps Mode

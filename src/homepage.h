@@ -3,10 +3,7 @@
 #include <QString>
 #include <QWidget>
 
-class QAbstractButton;
-class QFrame;
-class QScrollArea;
-class QWidget;
+class QWebEngineView;
 
 class HomePage final : public QWidget
 {
@@ -14,21 +11,22 @@ class HomePage final : public QWidget
 
 public:
     explicit HomePage(QWidget *parent = nullptr);
-
     void setCurrentMedia(const QString &displayName, bool available);
 
 signals:
     void openVideoRequested();
     void resumeRequested();
+    void openPathRequested(const QString &path);
 
 protected:
-    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 private:
-    QScrollArea *scroll_ = nullptr;
-    QFrame *nav_ = nullptr;
-    QWidget *navLinks_ = nullptr;
-    QAbstractButton *resumeCard_ = nullptr;
-    bool currentMediaAvailable_ = false;
+    void updateSessionCard();
+
+    QWebEngineView *view_ = nullptr;
     QString currentMediaName_;
+    bool currentMediaAvailable_ = false;
+    bool pageLoaded_ = false;
 };

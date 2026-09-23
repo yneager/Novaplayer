@@ -84,6 +84,9 @@ void MainWindow::buildUi()
 
     connect(homePage_, &HomePage::openVideoRequested, this, &MainWindow::openFile);
     connect(homePage_, &HomePage::resumeRequested, this, &MainWindow::resumeFromHome);
+    connect(homePage_, &HomePage::openPathRequested, this, [this](const QString &path) {
+        openPath(path);
+    });
 
     mainLayout_ = new QVBoxLayout(root_);
     mainLayout_->setContentsMargins(0, 0, 0, 0);

@@ -4,11 +4,29 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.3.1** — exact Vui homepage rendered with local Qt WebEngine; smooth Chromium scrolling and offline bundled Inter.
 - **v0.3.0** — Vui application shell: animated streaming homepage, persistent Home/Player navigation and restored native Vui player chrome around the existing engine.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
+## 2026-09-23 — v0.3.1 exact Vui homepage
+
+### Fixed
+- Removed the custom-painted Qt recreation of the Vui homepage. It could not reproduce browser CSS geometry/effects exactly and its QScrollArea/QScroller path produced jumpy scrolling.
+- The homepage now uses the actual Vui `index.html` and `home.css` in Qt WebEngine.
+- Enabled `QWebEngineSettings::ScrollAnimatorEnabled` for smooth Chromium scrolling.
+- Homepage rendering is frozen while Player is active to avoid decorative animation consuming resources during video playback.
+
+### Added
+- Qt 6 WebEngineWidgets dependency for the homepage only.
+- Local qrc-packaged Vui HTML/CSS; no remote page loading.
+- Pinned Inter variable font from rsms/inter commit `353b61b9f4430d5f420d56605a6e7993e0941470`, SHA-256 `693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3`, plus the SIL OFL 1.1 license.
+- CI validates that `QtWebEngineProcess.exe` and Chromium resource packs are present in the portable package.
+
+### Preserved
+- Native libmpv player/render surface and all existing RIFE, seeking, subtitles, audio, fullscreen and failure-fallback behavior.
 
 ## 2026-09-23 — v0.3.0 Vui application shell
 

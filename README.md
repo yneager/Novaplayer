@@ -1,10 +1,26 @@
 # NovaPlayer
 
-**Current version: v0.3.0**
+**Current version: v0.3.1**
 
 NovaPlayer is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
+
+### v0.3.1 — Exact Vui Homepage / Smooth WebEngine Rendering
+
+This corrective milestone replaces the hand-recreated native Qt homepage with the **actual current Vui HTML/CSS** rendered locally through Qt WebEngine.
+
+**Changed**
+- The homepage now renders the real `yneager/Vui/index.html` + `home.css` instead of an approximation made from custom Qt painting.
+- Chromium/WebEngine handles Vui's CSS grid/flex layout, blur/backdrop-filter, masks, gradients, transforms, hover transitions and keyframe animations directly.
+- Enabled Qt WebEngine's scroll animator so wheel/anchor scrolling is animated instead of jumping between Qt scroll positions.
+- The Vui page remains offline: Google Fonts network references were removed and Inter is bundled locally from a pinned upstream commit.
+- Player/card links are intercepted inside the local page and routed to NovaPlayer's existing local-file/player navigation; no remote website is loaded.
+- The first Continue Watching card can become the current-session Resume entry without changing Vui's visual structure.
+- The WebEngine page is frozen while the native player is visible so decorative homepage animation does not waste CPU/GPU during playback.
+
+**Preserved**
+- The native libmpv player, `video_` HWND embedding, RIFE/VapourSynth path, seek behavior, fullscreen controls, subtitles/audio tracks and existing playback code remain unchanged.
 
 ### v0.3.0 — Vui Application Shell
 

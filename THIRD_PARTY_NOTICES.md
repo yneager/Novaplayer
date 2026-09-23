@@ -50,3 +50,14 @@ code from it was copied into NovaPlayer.
   (NVIDIA, AMD or Intel). The Vulkan SDK is not required.
 * Windows 10/11 x64. No separate Python, VapourSynth, RIFE or ncnn installation
   is needed; everything is inside the portable package.
+
+
+## Inter
+
+- Component: Inter variable font
+- Upstream: https://github.com/rsms/inter
+- Pin: commit `353b61b9f4430d5f420d56605a6e7993e0941470`
+- Bundled file: `InterVariable.woff2`
+- SHA-256: `693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3`
+- License: SIL Open Font License 1.1
+- License copy: `licenses/Inter-LICENSE.txt`

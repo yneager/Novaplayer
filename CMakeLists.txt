@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(NovaPlayer VERSION 0.3.0 LANGUAGES CXX)
+project(NovaPlayer VERSION 0.3.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets WebEngineWidgets)
 
 set(MPV_ROOT "" CACHE PATH "Path to libmpv development package")
 if(NOT MPV_INCLUDE_DIR)
@@ -29,7 +29,21 @@ qt_add_executable(NovaPlayer WIN32
 )
 
 target_include_directories(NovaPlayer PRIVATE "${MPV_INCLUDE_DIR}")
-target_link_libraries(NovaPlayer PRIVATE Qt6::Widgets "${MPV_LIBRARY}")
+target_link_libraries(NovaPlayer PRIVATE Qt6::Widgets Qt6::WebEngineWidgets "${MPV_LIBRARY}")
+
+set(VUI_RESOURCE_FILES
+  resources/vui/index.html
+  resources/vui/home.css
+)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/vui/InterVariable.woff2")
+  list(APPEND VUI_RESOURCE_FILES resources/vui/InterVariable.woff2)
+endif()
+
+qt_add_resources(NovaPlayer "vui_home"
+  PREFIX "/vui"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vui"
+  FILES ${VUI_RESOURCE_FILES}
+)
 
 if(WIN32)
   target_compile_definitions(NovaPlayer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

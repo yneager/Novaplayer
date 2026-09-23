@@ -12,7 +12,26 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
-## Latest Change: v0.3.0 Vui Application Shell
+## Latest Change: v0.3.1 Exact Vui WebEngine Homepage
+
+The first v0.3.0 homepage was a native Qt/custom-paint recreation. User testing found two unacceptable differences: it was not visually identical to Vui, and vertical scrolling felt jumpy. v0.3.1 replaces that homepage implementation with the actual Vui HTML/CSS rendered by Qt WebEngine.
+
+### Architecture
+- Home: `QWebEngineView` loads `qrc:/vui/index.html` and the exact Vui `home.css`.
+- Player: unchanged native Qt/libmpv player page.
+- Link interception maps Vui's `player.html` links to NovaPlayer's local Open Video flow; `novaplayer://resume` resumes the current in-memory session.
+- Local file drag/drop on the WebEngine homepage forwards into `MainWindow::openPath()`.
+- `ScrollAnimatorEnabled` is explicitly enabled; Vui's own CSS `scroll-behavior:smooth` remains intact.
+- The WebEngine page is Frozen while hidden behind Player and Active when Home returns.
+- No remote site is loaded. Google Fonts links are removed; Inter is bundled locally and qrc-packaged in CI.
+
+### Packaging
+- Qt module: WebEngineWidgets (CI install module `qtwebengine`).
+- Inter pin: rsms/inter commit `353b61b9f4430d5f420d56605a6e7993e0941470`.
+- Inter SHA-256: `693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3`.
+- CI checks for `QtWebEngineProcess.exe` and `qtwebengine_resources.pak` after `windeployqt`.
+
+## Previous Change: v0.3.0 Vui Application Shell
 
 NovaPlayer now uses the current `yneager/Vui` project as its visual design source while keeping the existing C++20 / Qt 6 Widgets / libmpv / RIFE playback stack.
 

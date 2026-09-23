@@ -70,6 +70,7 @@ private:
     QRect fullscreenControlsHiddenRect() const;
     void setMpvPropertyFlag(const char *name, bool value);
     void setMpvPropertyDouble(const char *name, double value);
+    void setMpvPropertyInt64(const char *name, qint64 value);
     void command(const QStringList &args);
     void updateTimeLabel();
     static QString formatTime(double seconds);

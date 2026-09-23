@@ -11,11 +11,13 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QStyle>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
@@ -180,6 +182,9 @@ void MainWindow::initMpv()
     mpv_set_option_string(mpv_, "keep-open", "yes");
     mpv_set_option_string(mpv_, "osc", "no");
     mpv_set_option_string(mpv_, "input-default-bindings", "no");
+    mpv_set_option_string(mpv_, "sub-visibility", "yes");
+    mpv_set_option_string(mpv_, "embeddedfonts", "yes");
+    mpv_set_option_string(mpv_, "demuxer-mkv-subtitle-preroll", "yes");
 
     if (mpv_initialize(mpv_) < 0) {
         throw std::runtime_error("Could not initialize libmpv.");
@@ -387,7 +392,7 @@ void MainWindow::audioTrackChanged(int index)
     bool ok = false;
     const qlonglong id = audioTrack_->itemData(index).toLongLong(&ok);
     if (ok) {
-        command({"set", "aid", QString::number(id)});
+        setMpvPropertyInt64("aid", id);
     }
 }
 
@@ -404,10 +409,13 @@ void MainWindow::subtitleTrackChanged(int index)
     }
 
     if (id < 0) {
-        command({"set", "sid", "no"});
+        mpv_set_property_string(mpv_, "sid", "no");
     } else {
-        command({"set", "sid", QString::number(id)});
+        setMpvPropertyFlag("sub-visibility", true);
+        setMpvPropertyInt64("sid", id);
     }
+
+    QTimer::singleShot(0, this, &MainWindow::refreshTracks);
 }
 
 void MainWindow::loadSubtitle()
@@ -422,6 +430,7 @@ void MainWindow::loadSubtitle()
         return;
     }
 
+    setMpvPropertyFlag("sub-visibility", true);
     command({"sub-add", path, "select"});
 
     QTimer::singleShot(250, this, &MainWindow::refreshTracks);
@@ -429,6 +438,52 @@ void MainWindow::loadSubtitle()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == seek_ && event->type() == QEvent::MouseButtonPress) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::LeftButton && seek_->width() > 0) {
+            const int value = QStyle::sliderValueFromPosition(
+                seek_->minimum(),
+                seek_->maximum(),
+                qRound(mouseEvent->position().x()),
+                seek_->width());
+
+            seek_->setValue(value);
+            seeking_ = true;
+            seekReleased();
+            return true;
+        }
+    }
+
+    if (event->type() == QEvent::KeyPress && isActiveWindow()) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+
+        switch (keyEvent->key()) {
+        case Qt::Key_Space:
+            togglePause();
+            return true;
+        case Qt::Key_F:
+            toggleFullscreen();
+            return true;
+        case Qt::Key_Escape:
+            if (isFullScreen()) {
+                toggleFullscreen();
+                return true;
+            }
+            break;
+        case Qt::Key_M:
+            toggleMute();
+            return true;
+        case Qt::Key_Right:
+            command({"seek", "5", "relative"});
+            return true;
+        case Qt::Key_Left:
+            command({"seek", "-5", "relative"});
+            return true;
+        default:
+            break;
+        }
+    }
+
     if (isFullScreen() && event->type() == QEvent::MouseMove) {
         auto *widget = qobject_cast<QWidget *>(watched);
         if (widget && (widget == this || isAncestorOf(widget))) {
@@ -626,7 +681,7 @@ void MainWindow::seekReleased()
     }
 
     const double target = duration_ * double(seek_->value()) / 1000.0;
-    command({"seek", QString::number(target, 'f', 3), "absolute", "exact"});
+    command({"seek", QString::number(target, 'f', 3), "absolute+exact"});
 }
 
 void MainWindow::volumeChanged(int value)
@@ -657,6 +712,16 @@ void MainWindow::setMpvPropertyDouble(const char *name, double value)
     if (mpv_) {
         mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_DOUBLE, &value);
     }
+}
+
+void MainWindow::setMpvPropertyInt64(const char *name, qint64 value)
+{
+    if (!mpv_) {
+        return;
+    }
+
+    int64_t raw = static_cast<int64_t>(value);
+    mpv_set_property_async(mpv_, 0, name, MPV_FORMAT_INT64, &raw);
 }
 
 void MainWindow::updateTimeLabel()

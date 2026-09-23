@@ -7,13 +7,13 @@
 #include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMimeData>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSlider>
 #include <QTimer>
 #include <QUrl>
@@ -51,20 +51,20 @@ MainWindow::~MainWindow()
 
 void MainWindow::buildUi()
 {
-    auto *root = new QWidget(this);
-    auto *layout = new QVBoxLayout(root);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    root_ = new QWidget(this);
+    mainLayout_ = new QVBoxLayout(root_);
+    mainLayout_->setContentsMargins(0, 0, 0, 0);
+    mainLayout_->setSpacing(0);
 
-    video_ = new QWidget(root);
+    video_ = new QWidget(root_);
     video_->setAttribute(Qt::WA_NativeWindow);
     video_->setAttribute(Qt::WA_DontCreateNativeAncestors);
     video_->setStyleSheet("background:black;");
     video_->setMinimumSize(640, 360);
     video_->setMouseTracking(true);
-    layout->addWidget(video_, 1);
+    mainLayout_->addWidget(video_, 1);
 
-    controls_ = new QWidget(root);
+    controls_ = new QWidget(root_);
     auto *controlsLayout = new QVBoxLayout(controls_);
     controlsLayout->setContentsMargins(10, 6, 10, 10);
     controlsLayout->setSpacing(6);
@@ -104,9 +104,9 @@ void MainWindow::buildUi()
     buttonRow->addWidget(fullscreenButton_);
 
     controlsLayout->addLayout(buttonRow);
-    layout->addWidget(controls_);
+    mainLayout_->addWidget(controls_);
 
-    setCentralWidget(root);
+    setCentralWidget(root_);
 
     connect(openButton, &QPushButton::clicked, this, &MainWindow::openFile);
     connect(playButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
@@ -117,26 +117,23 @@ void MainWindow::buildUi()
 
     fullscreenControlsTimer_ = new QTimer(this);
     fullscreenControlsTimer_->setSingleShot(true);
-    fullscreenControlsTimer_->setInterval(1800);
+    fullscreenControlsTimer_->setInterval(2200);
     connect(fullscreenControlsTimer_, &QTimer::timeout,
             this, &MainWindow::hideFullscreenControls);
 
-    controlsOpacity_ = new QGraphicsOpacityEffect(controls_);
-    controlsOpacity_->setOpacity(1.0);
-    controls_->setGraphicsEffect(controlsOpacity_);
-
-    controlsFade_ = new QPropertyAnimation(controlsOpacity_, "opacity", this);
-    controlsFade_->setDuration(250);
-    connect(controlsFade_, &QPropertyAnimation::finished, this, [this] {
-        if (isFullScreen() && controlsOpacity_->opacity() < 0.05) {
+    controlsSlide_ = new QPropertyAnimation(controls_, "geometry", this);
+    controlsSlide_->setDuration(500);
+    controlsSlide_->setEasingCurve(QEasingCurve::OutCubic);
+    connect(controlsSlide_, &QPropertyAnimation::finished, this, [this] {
+        if (isFullScreen() && !fullscreenControlsVisible_) {
             controls_->hide();
             setCursor(Qt::BlankCursor);
         }
     });
 
-    root->setMouseTracking(true);
+    root_->setMouseTracking(true);
     controls_->setMouseTracking(true);
-    for (QWidget *child : root->findChildren<QWidget *>()) {
+    for (QWidget *child : root_->findChildren<QWidget *>()) {
         child->setMouseTracking(true);
     }
 }
@@ -234,18 +231,80 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
+QRect MainWindow::fullscreenControlsShownRect() const
+{
+    const int height = controlsHeight_ > 0 ? controlsHeight_ : controls_->sizeHint().height();
+    return QRect(0, qMax(0, root_->height() - height), root_->width(), height);
+}
+
+QRect MainWindow::fullscreenControlsHiddenRect() const
+{
+    const int height = controlsHeight_ > 0 ? controlsHeight_ : controls_->sizeHint().height();
+    return QRect(0, root_->height(), root_->width(), height);
+}
+
+void MainWindow::enterFullscreenControlsMode()
+{
+    controlsHeight_ = qMax(controls_->height(), controls_->sizeHint().height());
+
+    mainLayout_->removeWidget(controls_);
+    controls_->setParent(root_);
+
+    // Make the control panel its own native child window so it can reliably
+    // stay above libmpv's native video HWND on Windows.
+    controls_->setAttribute(Qt::WA_NativeWindow);
+    controls_->winId();
+
+    fullscreenControlsVisible_ = false;
+    controls_->setGeometry(fullscreenControlsHiddenRect());
+    controls_->hide();
+}
+
+void MainWindow::leaveFullscreenControlsMode()
+{
+    fullscreenControlsTimer_->stop();
+    controlsSlide_->stop();
+    fullscreenControlsVisible_ = true;
+    unsetCursor();
+
+    controls_->hide();
+    controls_->setParent(root_);
+    mainLayout_->addWidget(controls_);
+    controls_->show();
+}
+
 void MainWindow::showFullscreenControls()
 {
     if (!isFullScreen()) {
         return;
     }
 
-    controlsFade_->stop();
-    controlsOpacity_->setOpacity(1.0);
-    controls_->show();
+    fullscreenControlsTimer_->start();
     unsetCursor();
 
-    fullscreenControlsTimer_->start();
+    const QRect shown = fullscreenControlsShownRect();
+
+    if (fullscreenControlsVisible_ && controls_->isVisible()) {
+        controls_->setGeometry(shown);
+        controls_->raise();
+        return;
+    }
+
+    fullscreenControlsVisible_ = true;
+    controlsSlide_->stop();
+
+    QRect start = controls_->isVisible() ? controls_->geometry()
+                                         : fullscreenControlsHiddenRect();
+
+    controls_->setGeometry(start);
+    controls_->show();
+    controls_->raise();
+
+    controlsSlide_->setDuration(500);
+    controlsSlide_->setEasingCurve(QEasingCurve::OutCubic);
+    controlsSlide_->setStartValue(start);
+    controlsSlide_->setEndValue(shown);
+    controlsSlide_->start();
 }
 
 void MainWindow::hideFullscreenControls()
@@ -254,10 +313,14 @@ void MainWindow::hideFullscreenControls()
         return;
     }
 
-    controlsFade_->stop();
-    controlsFade_->setStartValue(controlsOpacity_->opacity());
-    controlsFade_->setEndValue(0.0);
-    controlsFade_->start();
+    fullscreenControlsVisible_ = false;
+    controlsSlide_->stop();
+
+    controlsSlide_->setDuration(450);
+    controlsSlide_->setEasingCurve(QEasingCurve::InCubic);
+    controlsSlide_->setStartValue(controls_->geometry());
+    controlsSlide_->setEndValue(fullscreenControlsHiddenRect());
+    controlsSlide_->start();
 }
 
 void MainWindow::command(const QStringList &args)
@@ -312,18 +375,40 @@ void MainWindow::toggleMute()
 void MainWindow::toggleFullscreen()
 {
     if (isFullScreen()) {
-        fullscreenControlsTimer_->stop();
-        controlsFade_->stop();
-        controlsOpacity_->setOpacity(1.0);
-        controls_->show();
-        unsetCursor();
-
+        leaveFullscreenControlsMode();
         showNormal();
         fullscreenButton_->setText("Fullscreen");
     } else {
+        enterFullscreenControlsMode();
         showFullScreen();
         fullscreenButton_->setText("Window");
-        showFullscreenControls();
+
+        QTimer::singleShot(0, this, [this] {
+            controls_->setGeometry(fullscreenControlsHiddenRect());
+            showFullscreenControls();
+        });
+    }
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+
+    if (!isFullScreen() || controls_->parentWidget() != root_) {
+        return;
+    }
+
+    if (controlsSlide_->state() == QAbstractAnimation::Running) {
+        controlsSlide_->stop();
+    }
+
+    controls_->setGeometry(fullscreenControlsVisible_
+                               ? fullscreenControlsShownRect()
+                               : fullscreenControlsHiddenRect());
+
+    if (fullscreenControlsVisible_) {
+        controls_->show();
+        controls_->raise();
     }
 }
 

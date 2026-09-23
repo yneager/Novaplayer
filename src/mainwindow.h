@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QMainWindow>
 #include <QStringList>
 #include <mpv/client.h>

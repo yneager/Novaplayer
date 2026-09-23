@@ -14,6 +14,7 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStringList>
 #include <QScroller>
 #include <QTimer>
 #include <QVariantAnimation>
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace {
 
@@ -76,8 +78,8 @@ public:
         switch (kind_) {
         case Kind::Continue: return {390, 220};
         case Kind::Poster: return {216, 322};
-        case Kind::CollectionLarge: return {610, 300};
-        case Kind::CollectionSmall: return {300, 144};
+        case Kind::CollectionLarge: return {540, 300};
+        case Kind::CollectionSmall: return {260, 144};
         case Kind::Landscape: return {350, 202};
         }
         return {320, 200};
@@ -499,6 +501,40 @@ protected:
         bottomFade.setColorAt(0, QColor(5, 6, 9, 0));
         bottomFade.setColorAt(1, QColor(5, 6, 9, 245));
         p.fillRect(r, bottomFade);
+
+        // Vui featured index and explore cue.
+        const QRectF feature(w - 330, h - 118, 270, 64);
+        p.setPen(QPen(QColor(255, 255, 255, 28), 1));
+        p.setBrush(QColor(15, 18, 26, 175));
+        p.drawRoundedRect(feature, 17, 17);
+        QFont indexFont = font();
+        indexFont.setPixelSize(24);
+        indexFont.setWeight(QFont::DemiBold);
+        p.setFont(indexFont);
+        p.setPen(QColor(kCyanLight));
+        p.drawText(QRectF(feature.left() + 15, feature.top(), 45, feature.height()), Qt::AlignCenter, "01");
+        QFont featureFont = font();
+        featureFont.setPixelSize(8);
+        featureFont.setWeight(QFont::Bold);
+        featureFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.4);
+        p.setFont(featureFont);
+        p.setPen(QColor(235, 239, 248, 112));
+        p.drawText(QRectF(feature.left() + 70, feature.top() + 12, 180, 16), Qt::AlignLeft, "FEATURED");
+        featureFont.setPixelSize(10);
+        featureFont.setLetterSpacing(QFont::AbsoluteSpacing, .7);
+        p.setFont(featureFont);
+        p.setPen(QColor(kText));
+        p.drawText(QRectF(feature.left() + 70, feature.top() + 29, 180, 24), Qt::AlignLeft, "SYNTHETIC HORIZON");
+
+        QFont exploreFont = font();
+        exploreFont.setPixelSize(8);
+        exploreFont.setWeight(QFont::Bold);
+        exploreFont.setLetterSpacing(QFont::AbsoluteSpacing, 2.0);
+        p.setFont(exploreFont);
+        p.setPen(QColor(235, 239, 248, 92));
+        p.drawText(QRectF(w * .47, h - 48, 100, 18), Qt::AlignCenter, "EXPLORE");
+        p.setPen(QPen(QColor(120, 245, 231, 115), 1));
+        p.drawLine(QPointF(w * .52, h - 27), QPointF(w * .52, h - 11));
     }
 
 private:

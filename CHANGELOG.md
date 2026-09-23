@@ -17,8 +17,11 @@ This file records notable completed work visible in the repository history.
 - Added animated fullscreen control slide-in/slide-out, automatic hiding, and cursor hiding.
 
 ### Fixed
+- Corrected MKV/progress-bar seeking by passing mpv seek flags as a single `absolute+exact` argument; added direct click-to-seek and made playback keyboard shortcuts work even when child controls have focus.
+- Strengthened audio/subtitle switching by setting mpv `aid`/`sid` runtime properties directly, explicitly enabling subtitle visibility, enabling embedded fonts, and enabling Matroska subtitle preroll.
 - Corrected Qt MOC/AUTOMOC configuration and source formatting so `MainWindow` meta-object code is generated and linked correctly on Windows.
 - Added the explicit `QByteArray` include required by the track-property helper declarations.
 
 ### Verification
-- Code at commit `027178e0f5b4c12100cc5c1e006c8ea700f7bf18` completed `Build Windows Portable` GitHub Actions run #8 successfully, including build, packaging, and artifact upload.
+- Code at commit `3314ef130cc42cbc3f86fbee60ab6efc9a64f05b` completed `Build Windows Portable` GitHub Actions run #10 successfully, including build, packaging, and artifact upload. Runtime verification of the reported MKV seek/subtitle behavior remains pending.
+- Earlier code at commit `027178e0f5b4c12100cc5c1e006c8ea700f7bf18` completed run #8 successfully.

@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-NovaPlayer bundles the open-source components below in the portable Windows
-package (`NovaPlayer-Windows-x64`). The verbatim license texts are shipped in
+LAMBDA Player bundles the open-source components below in the portable Windows
+package (`LAMBDA Player-Windows-x64`). The verbatim license texts are shipped in
 the `licenses/` directory of the package and of this repository. Upstream
 copyright notices are preserved unmodified.
 
@@ -20,7 +20,7 @@ build time. Change them deliberately and update this file when you do.
 License texts: `licenses/mpv-LICENSE.GPL.txt`, `licenses/mpv-Copyright.txt`.
 The complete corresponding source for the libmpv build is the
 `shinchiro/mpv-winbuild-cmake` release `20260923` (build scripts) and the mpv
-git commit `6fd80b2003`; NovaPlayer links libmpv dynamically. Qt's LGPL text
+git commit `6fd80b2003`; LAMBDA Player links libmpv dynamically. Qt's LGPL text
 is available at <https://www.qt.io/licensing/open-source-lgpl-obligations>.
 
 ## Frame interpolation runtime (added in the RIFE 2x milestone)
@@ -42,7 +42,7 @@ License texts: `licenses/Python-LICENSE.txt`, `licenses/VapourSynth-COPYING.LESS
 `licenses/vs-miscfilters-obsolete-LICENSE.txt`, `licenses/mpv-RIFE-LICENSE.txt`.
 
 `president-not-sure/mpv-interpolation` (GPL-2.0) was studied for ideas only; no
-code from it was copied into NovaPlayer.
+code from it was copied into LAMBDA Player.
 
 ## System requirements introduced by the interpolation runtime
 

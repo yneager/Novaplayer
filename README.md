@@ -1,54 +1,31 @@
-# NovaPlayer
+# LAMBDA Player
 
-**Current version: v0.3.1**
+**Current version: v0.2.1**
 
-NovaPlayer is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
+LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
 
-### v0.3.1 — Exact Vui Homepage / Smooth WebEngine Rendering
+### v0.2.1 — LAMBDA Player / Complete Vui CSS
 
-This corrective milestone replaces the hand-recreated native Qt homepage with the **actual current Vui HTML/CSS** rendered locally through Qt WebEngine.
+This is the new active version line. The product name is now **LAMBDA Player** and both major application surfaces use the current Vui HTML/CSS as their visual source.
 
 **Changed**
-- The homepage now renders the real `yneager/Vui/index.html` + `home.css` instead of an approximation made from custom Qt painting.
-- Chromium/WebEngine handles Vui's CSS grid/flex layout, blur/backdrop-filter, masks, gradients, transforms, hover transitions and keyframe animations directly.
-- Enabled Qt WebEngine's scroll animator so wheel/anchor scrolling is animated instead of jumping between Qt scroll positions.
-- The Vui page remains offline: Google Fonts network references were removed and Inter is bundled locally from a pinned upstream commit.
-- Player/card links are intercepted inside the local page and routed to NovaPlayer's existing local-file/player navigation; no remote website is loaded.
-- The first Continue Watching card can become the current-session Resume entry without changing Vui's visual structure.
-- The WebEngine page is frozen while the native player is visible so decorative homepage animation does not waste CPU/GPU during playback.
+- Renamed the application from LAMBDA Player to **LAMBDA Player**. The Windows executable is `LambdaPlayer.exe` and CI artifacts use `LAMBDA-Player-Windows-x64`.
+- Reset the active project version to **v0.2.1**. The abandoned/current-branch v0.3.x labels are no longer part of the maintained version history.
+- Home continues to render the real Vui `index.html` + `home.css` locally through Qt WebEngine.
+- Player now renders the real Vui `player.html` + `styles.css` as Chromium/WebEngine chrome instead of visually approximating that CSS with Qt widgets.
+- A small local WebChannel bridge maps the Vui player controls to the existing C++/libmpv backend: Open, Home, play/pause, next, mute/volume, exact seek, speed, audio tracks, subtitles, external subtitles, RIFE interpolation and fullscreen.
+- The Vui settings UI is rendered in CSS and populated from the real mpv track list and interpolation state.
+- The WebEngine player reports its responsive player rectangle to Qt; the existing native libmpv `video_` HWND remains the video target underneath the CSS chrome.
+- Google Fonts are not loaded from the network. Inter is bundled locally from the pinned upstream font release.
 
 **Preserved**
-- The native libmpv player, `video_` HWND embedding, RIFE/VapourSynth path, seek behavior, fullscreen controls, subtitles/audio tracks and existing playback code remain unchanged.
-
-### v0.3.0 — Vui Application Shell
-
-This milestone turns NovaPlayer into a cohesive Vui-styled desktop application while preserving the existing libmpv and RIFE playback engine.
-
-**Added / Changed**
-- NovaPlayer now launches into a native Vui streaming homepage instead of an empty video surface.
-- Added a floating glass navigation bar, animated cinematic hero, Continue Watching rail, Trending poster rail, editorial Collections and Fresh Transmissions sections based on the current `yneager/Vui` design.
-- Added abstract locally rendered Vui artwork, planet/orb motion, grid/light movement, hover lift/glow treatments and responsive horizontal rails. The interface has no network dependency and does not download Google Fonts or remote artwork.
-- Added an explicit local **Open Video** action, hero Play action and drag/drop flow that all reuse NovaPlayer's existing `openPath()` path.
-- Restored and refined the native Vui player chrome from the earlier UI work while retaining the existing native libmpv `wid` video surface.
-- Added a page architecture around one persistent libmpv instance: Vui Home → Player → Vui Home.
-- Player Home pauses the current item without destroying mpv; the homepage Continue Watching card becomes a session Resume action for the loaded local file.
-- Added a native transition curtain between Home and Player so the transition remains compatible with the Windows native video child window.
-- The player retains real actions for play/pause, playlist-next, volume/mute, accurate seeking, chapters, speed, audio/subtitle selection, external subtitles, fullscreen and RIFE. PiP remains disabled because it is not implemented.
-- Branding remains NovaPlayer, presented as **NOVA / VUI** where appropriate.
-
-**Preserved**
-- libmpv playback, `hwdec=auto-safe`, MKV seek/subtitle fixes, fullscreen overlay auto-hide, audio tracks, external subtitles and all existing RIFE modes/failure fallback.
-- `VSSCRIPT_PATH` is still configured before `mpv_create()`; seeking still uses the combined `absolute+exact` flag; interpolation still removes only `@novarife`.
-
-**Packaging**
-- The Vui shell is implemented with Qt 6 Widgets/custom painting and is compiled into `NovaPlayer.exe`. No Qt WebEngine or extra runtime UI asset directory is required.
-- Windows portable packaging and the pinned libmpv/RIFE runtime remain unchanged.
-
-**Verification status**
-- Source integration preserves the existing playback paths by construction; the Windows portable GitHub Actions build is checked after the commit is pushed.
-- Runtime playback and RIFE behavior still require user/local testing of the produced Windows artifact; CI success alone is not treated as runtime verification.
+- libmpv remains the playback/rendering backend.
+- `video_` remains the native `wid` target; this change does not switch to a different media engine or mpv render API.
+- `hwdec=auto-safe`, MKV seeking, `absolute+exact` seek semantics, audio/subtitle switching, external subtitles, chapters and keyboard shortcuts remain in place.
+- RIFE remains the existing mpv VapourSynth filter path and still adds/removes only `@novarife`.
+- `VSSCRIPT_PATH` is still configured before `mpv_create()`.
 
 ### v0.2.0 — RIFE Frame Interpolation
 
@@ -76,7 +53,7 @@ This milestone turns NovaPlayer into a cohesive Vui-styled desktop application w
 
 ### v0.1.0 — Base Player
 
-This is the original NovaPlayer base-player milestone before RIFE was added.
+This is the original LAMBDA Player base-player milestone before RIFE was added.
 
 **Added**
 - Local video playback through libmpv.
@@ -108,15 +85,15 @@ This is the original NovaPlayer base-player milestone before RIFE was added.
 **Verified**
 - The user runtime-tested the v0.1 playback baseline, including MKV seeking, embedded/external subtitles, multiple audio tracks and fullscreen controls.
 
-> **Versioning rule:** when NovaPlayer moves to a new version, add the new version at the top of this section with its **Added**, **Changed** and/or **Fixed** items. Never remove older version entries. Detailed development history remains in [CHANGELOG.md](CHANGELOG.md).
+> **Versioning rule:** v0.2.1 is the reset/current line for LAMBDA Player. Future versions are added above it; v0.2.0 and v0.1.0 remain as the retained earlier milestones. Detailed development history remains in [CHANGELOG.md](CHANGELOG.md).
 
 ## Automatic Windows build and releases
 
 Open **Actions → Build Windows Portable → Run workflow** for a normal test build.
 
-When it finishes, download the **NovaPlayer-Windows-x64** artifact, extract it and run `NovaPlayer.exe`.
+When it finishes, download the **LAMBDA-Player-Windows-x64** artifact, extract it and run `LambdaPlayer.exe`.
 
-For a public GitHub Release, first update the version in `CMakeLists.txt`, commit it, then push a matching tag such as `v0.3.2`. The same workflow builds and smoke-tests the portable package, creates `NovaPlayer-Windows-x64-v0.3.2.zip`, and publishes it on the repository's **Releases** page automatically. The workflow rejects a tag whose version does not match `CMakeLists.txt`.
+For a public GitHub Release, first update the version in `CMakeLists.txt`, commit it, then push a matching tag such as `v0.2.1`. The same workflow builds and smoke-tests the portable package, creates `LAMBDA-Player-Windows-x64-v0.2.1.zip`, and publishes it on the repository's **Releases** page automatically. The workflow rejects a tag whose version does not match `CMakeLists.txt`.
 
 No local Qt, Visual Studio, CMake, libmpv, Python or VapourSynth installation is required for this test route. The portable package contains the frame-interpolation runtime.
 
@@ -148,9 +125,9 @@ Pipeline:
 
 `media file → libmpv decode → mpv VapourSynth filter → VapourSynth → VapourSynth-RIFE-ncnn-Vulkan / ncnn / Vulkan → libmpv rendering`
 
-NovaPlayer does not contain a custom RIFE implementation. It adds a labelled mpv filter (`@novarife`) that runs the bundled `rife/rife.vpy` script. Audio, subtitles, seeking, timing and final rendering remain handled by libmpv.
+LAMBDA Player does not contain a custom RIFE implementation. It adds a labelled mpv filter (`@novarife`) that runs the bundled `rife/rife.vpy` script. Audio, subtitles, seeking, timing and final rendering remain handled by libmpv.
 
-Requirements: a Vulkan-capable NVIDIA, AMD or Intel GPU with a current vendor driver and enough performance for the video's resolution. If interpolation cannot initialize, NovaPlayer falls back to normal playback.
+Requirements: a Vulkan-capable NVIDIA, AMD or Intel GPU with a current vendor driver and enough performance for the video's resolution. If interpolation cannot initialize, LAMBDA Player falls back to normal playback.
 
 Not included yet: additional target frame rates, display-Hz matching, GPU/model selection, quality presets, realtime upscaling and settings persistence.
 

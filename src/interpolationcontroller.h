@@ -4,7 +4,7 @@
 #include <QString>
 #include <mpv/client.h>
 
-// Small glue layer between NovaPlayer and mpv's built-in `vapoursynth` video
+// Small glue layer between LAMBDA Player and mpv's built-in `vapoursynth` video
 // filter. It locates the bundled VapourSynth/RIFE runtime, adds or removes the
 // labelled `@novarife` filter and reports activation failures. It contains no
 // interpolation logic of its own; the actual work is done by mpv, VapourSynth

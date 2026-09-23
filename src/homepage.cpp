@@ -102,7 +102,7 @@ HomePage::HomePage(QWidget *parent)
 
     auto *page = new VuiPage(view_);
     page->navigationHandler = [this](const QUrl &url) {
-        if (url.scheme() == "novaplayer") {
+        if (url.scheme() == "lambda") {
             if (url.host() == "resume") {
                 emit resumeRequested();
             } else {
@@ -178,7 +178,7 @@ void HomePage::updateSessionCard()
   const meta = card.querySelector('.wide-info div span');
   if (%1) {
     const mediaName = %2[0];
-    card.href = 'novaplayer://resume';
+    card.href = 'lambda://resume';
     if (badge) badge.textContent = 'LOCAL';
     if (title) title.textContent = mediaName || 'Current video';
     if (meta) meta.textContent = 'Resume current session';

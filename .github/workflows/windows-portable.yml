@@ -1,4 +1,4 @@
-name: Build Windows Portable
+name: Build LAMBDA Player Windows Portable
 on:
   workflow_dispatch:
   push:
@@ -17,8 +17,8 @@ jobs:
         shell: pwsh
         run: |
           $cmake = Get-Content CMakeLists.txt -Raw
-          if ($cmake -notmatch 'project\(NovaPlayer VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
-            throw "Could not read NovaPlayer version from CMakeLists.txt"
+          if ($cmake -notmatch 'project\(LambdaPlayer VERSION ([0-9]+\.[0-9]+\.[0-9]+)') {
+            throw "Could not read LAMBDA Player version from CMakeLists.txt"
           }
           $expected = "v$($Matches[1])"
           if ($env:GITHUB_REF_NAME -ne $expected) {
@@ -38,8 +38,16 @@ jobs:
           $tag="20260923"
           $asset="mpv-dev-x86_64-20260923-git-6fd80b2003.7z"
           $sha="372F29C292D0C8B4CE916225739E5872E35B8E11F3F4590C285BAED8BA551100"
-          $h=@{"User-Agent"="NovaPlayer-GitHub-Actions"}
-          Invoke-WebRequest -Headers $h -Uri "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$tag/$asset" -OutFile mpv-dev.7z
+          $h=@{"User-Agent"="LAMBDA-Player-GitHub-Actions"}
+          for($attempt=1;$attempt -le 3;$attempt++){
+            try {
+              Invoke-WebRequest -Headers $h -Uri "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$tag/$asset" -OutFile mpv-dev.7z
+              break
+            } catch {
+              if($attempt -eq 3){throw}
+              Start-Sleep -Seconds (4*$attempt)
+            }
+          }
           $actual=(Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash
           if($actual -ne $sha){throw "libmpv SHA-256 mismatch: expected $sha got $actual"}
           New-Item -ItemType Directory -Force deps\mpv|Out-Null
@@ -63,7 +71,15 @@ jobs:
           $url="https://raw.githubusercontent.com/rsms/inter/$commit/docs/font-files/InterVariable.woff2"
           $expected="693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3"
           New-Item -ItemType Directory -Force resources\vui|Out-Null
-          Invoke-WebRequest -Uri $url -OutFile resources\vui\InterVariable.woff2
+          for($attempt=1;$attempt -le 3;$attempt++){
+            try {
+              Invoke-WebRequest -Uri $url -OutFile resources\vui\InterVariable.woff2
+              break
+            } catch {
+              if($attempt -eq 3){throw}
+              Start-Sleep -Seconds (4*$attempt)
+            }
+          }
           $actual=(Get-FileHash resources\vui\InterVariable.woff2 -Algorithm SHA256).Hash
           Write-Host "InterVariable.woff2 SHA-256: $actual"
           if($actual -ne $expected){throw "Inter font SHA-256 mismatch: expected $expected got $actual"}
@@ -76,9 +92,9 @@ jobs:
         shell: pwsh
         run: |
           mkdir portable
-          Copy-Item build\Release\NovaPlayer.exe portable\
+          Copy-Item build\Release\LambdaPlayer.exe portable\
           Copy-Item "$env:MPV_DLL" portable\libmpv-2.dll
-          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --compiler-runtime portable\NovaPlayer.exe
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --compiler-runtime portable\LambdaPlayer.exe
           $webProcess=Get-ChildItem portable -Recurse -Filter QtWebEngineProcess.exe|Select-Object -First 1
           $webResources=Get-ChildItem portable -Recurse -Filter qtwebengine_resources.pak|Select-Object -First 1
           if(!$webProcess -or !$webResources){throw "Qt WebEngine runtime resources were not deployed"}
@@ -104,23 +120,23 @@ jobs:
       - name: Smoke-test packaged app startup
         shell: pwsh
         run: |
-          $exe = Join-Path (Resolve-Path portable).Path "NovaPlayer.exe"
+          $exe = Join-Path (Resolve-Path portable).Path "LambdaPlayer.exe"
           $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -PassThru
           Start-Sleep -Seconds 5
           $process.Refresh()
           if ($process.HasExited) {
-            throw "NovaPlayer exited during startup smoke test with code $($process.ExitCode)"
+            throw "LAMBDA Player exited during startup smoke test with code $($process.ExitCode)"
           }
           Stop-Process -Id $process.Id -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: NovaPlayer-Windows-x64
+          name: LAMBDA-Player-Windows-x64
           path: portable/
       - name: Create release archive
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $archive = "NovaPlayer-Windows-x64-$env:GITHUB_REF_NAME.zip"
+          $archive = "LAMBDA-Player-Windows-x64-$env:GITHUB_REF_NAME.zip"
           Compress-Archive -Path portable\* -DestinationPath $archive -Force
           "RELEASE_ASSET=$archive" | Out-File $env:GITHUB_ENV -Append
       - name: Publish GitHub Release
@@ -133,5 +149,5 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload "$env:GITHUB_REF_NAME" "$env:RELEASE_ASSET" --clobber
           } else {
-            gh release create "$env:GITHUB_REF_NAME" "$env:RELEASE_ASSET" --verify-tag --title "NovaPlayer $env:GITHUB_REF_NAME" --generate-notes
+            gh release create "$env:GITHUB_REF_NAME" "$env:RELEASE_ASSET" --verify-tag --title "LAMBDA Player $env:GITHUB_REF_NAME" --generate-notes
           }

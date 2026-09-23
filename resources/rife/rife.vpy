@@ -1,4 +1,4 @@
-# NovaPlayer RIFE frame-interpolation script for mpv's `vapoursynth` video filter
+# LAMBDA Player RIFE frame-interpolation script for mpv's `vapoursynth` video filter
 # (modes: double the frame rate, or 60 fps).
 #
 # Pipeline:  libmpv decode -> mpv vapoursynth filter -> this script
@@ -12,7 +12,7 @@
 # VapourSynth-RIFE-ncnn-Vulkan plugin documentation
 # (https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan, MIT).
 # All machine-specific paths were removed; every path is resolved relative to the
-# runtime directory that NovaPlayer passes in through mpv's `user-data` sub-option
+# runtime directory that LAMBDA Player passes in through mpv's `user-data` sub-option
 # (falling back to the directory that contains this script).
 #
 # Runtime directory layout expected next to this script:
@@ -38,7 +38,7 @@ RIFE_MODEL_DIR = os.path.join("models", "rife-v4.6_ensembleFalse")
 # duplicated by the plugin instead of being interpolated across the cut.
 SCENE_CHANGE_THRESHOLD = 0.1
 
-# Modes selected by NovaPlayer through mpv's `user-data` sub-option, formatted
+# Modes selected by LAMBDA Player through mpv's `user-data` sub-option, formatted
 # as "<mode>|<runtime dir>":
 #   double : 2x the source frame rate (24 -> 48, 30 -> 60, ...)
 #   60     : 60 fps output for sources below 60 fps
@@ -92,7 +92,7 @@ def _factor():
             raise vs.Error(f"60 fps mode is only for videos below 60 fps (this video is {float(fps):.3f} fps).")
         factor = TARGET_60 / fps
         return factor.numerator, factor.denominator
-    raise vs.Error(f"Unknown NovaPlayer RIFE mode: {MODE!r}")
+    raise vs.Error(f"Unknown LAMBDA Player RIFE mode: {MODE!r}")
 
 
 def _runtime_dir():
@@ -107,7 +107,7 @@ def _runtime_dir():
         if os.path.isfile(os.path.join(candidate, RIFE_PLUGIN_FILE)):
             return candidate
     raise vs.Error(
-        "NovaPlayer RIFE runtime not found. Looked in: "
+        "LAMBDA Player RIFE runtime not found. Looked in: "
         + (", ".join(candidates) if candidates else "<no candidates>")
     )
 
@@ -153,9 +153,9 @@ class _ColorState:
 
 def build(clip):
     if clip.format is None:
-        raise vs.Error("NovaPlayer RIFE: variable-format input is not supported")
+        raise vs.Error("LAMBDA Player RIFE: variable-format input is not supported")
     if clip.format.color_family != vs.YUV:
-        raise vs.Error("NovaPlayer RIFE: only YUV input from mpv is supported")
+        raise vs.Error("LAMBDA Player RIFE: only YUV input from mpv is supported")
 
     runtime_dir = _runtime_dir()
     _load_plugin("misc", os.path.join(runtime_dir, MISC_PLUGIN_FILE))
@@ -223,6 +223,6 @@ def build(clip):
 
 
 if "video_in" not in globals():
-    raise vs.Error("NovaPlayer RIFE: this script must be loaded by mpv's vapoursynth filter")
+    raise vs.Error("LAMBDA Player RIFE: this script must be loaded by mpv's vapoursynth filter")
 
 build(video_in).set_output()

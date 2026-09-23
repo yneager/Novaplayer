@@ -1,5 +1,5 @@
 # Assembles the portable VapourSynth + RIFE frame-interpolation runtime that
-# NovaPlayer loads through mpv's `vapoursynth` video filter.
+# LAMBDA Player loads through mpv's `vapoursynth` video filter.
 #
 # Every third-party download is pinned to a specific release/commit and verified
 # with SHA-256 before it is used. Update the table below deliberately when
@@ -50,7 +50,7 @@ function Get-Verified([hashtable]$Artifact) {
     $path = Join-Path $DownloadDir $Artifact.Name
     if (-not (Test-Path $path)) {
         Write-Host "Downloading $($Artifact.Name)"
-        Invoke-WebRequest -Headers @{ "User-Agent" = "NovaPlayer-GitHub-Actions" } -Uri $Artifact.Url -OutFile $path
+        Invoke-WebRequest -Headers @{ "User-Agent" = "LAMBDA Player-GitHub-Actions" } -Uri $Artifact.Url -OutFile $path
     }
     $hash = (Get-FileHash -Algorithm SHA256 $path).Hash
     if ($hash -ne $Artifact.Sha256) {
@@ -110,7 +110,7 @@ Write-Host "Installing misc.SCDetect plugin"
 if ($LASTEXITCODE -ne 0) { throw "7z extraction of miscfilters failed" }
 Copy-Item (Join-Path $work "misc\win64\MiscFilters.dll") (Join-Path $rifeDir "MiscFilters.dll") -Force
 
-# --- NovaPlayer script and license notices ------------------------------------
+# --- LAMBDA Player script and license notices ------------------------------------
 Copy-Item (Join-Path $RepoRoot "resources\rife\rife.vpy") (Join-Path $rifeDir "rife.vpy") -Force
 Copy-Item (Join-Path $RepoRoot "licenses\*") $licenseDir -Force
 Copy-Item (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.md") $PortableDir -Force

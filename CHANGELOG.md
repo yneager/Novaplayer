@@ -4,52 +4,31 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
-- **v0.3.1** — exact Vui homepage rendered with local Qt WebEngine; smooth Chromium scrolling and offline bundled Inter.
-- **v0.3.0** — Vui application shell: animated streaming homepage, persistent Home/Player navigation and restored native Vui player chrome around the existing engine.
+- **v0.2.1** — LAMBDA Player identity reset; real Vui HTML/CSS on both Home and Player while preserving the native libmpv/RIFE engine.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
 
-## 2026-09-23 — v0.3.1 exact Vui homepage
-
-### Fixed
-- Removed the custom-painted Qt recreation of the Vui homepage. It could not reproduce browser CSS geometry/effects exactly and its QScrollArea/QScroller path produced jumpy scrolling.
-- The homepage now uses the actual Vui `index.html` and `home.css` in Qt WebEngine.
-- Enabled `QWebEngineSettings::ScrollAnimatorEnabled` for smooth Chromium scrolling.
-- Homepage rendering is frozen while Player is active to avoid decorative animation consuming resources during video playback.
-
-### Added
-- Qt 6 WebEngineWidgets dependency for the homepage only.
-- Local qrc-packaged Vui HTML/CSS; no remote page loading.
-- Pinned Inter variable font from rsms/inter commit `353b61b9f4430d5f420d56605a6e7993e0941470`, SHA-256 `693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3`, plus the SIL OFL 1.1 license.
-- CI validates that `QtWebEngineProcess.exe` and Chromium resource packs are present in the portable package.
-
-### Preserved
-- Native libmpv player/render surface and all existing RIFE, seeking, subtitles, audio, fullscreen and failure-fallback behavior.
-
-## 2026-09-23 — v0.3.0 Vui application shell
-
-### Added
-- Native Qt Vui homepage based on the current `yneager/Vui/index.html` and `home.css`: fixed glass navigation, animated hero planet/grid/beams, Continue Watching, Trending, Collections and Fresh Transmissions.
-- `HomePage` custom widgets and painting for offline abstract artwork, hover/elevation transitions and responsive horizontal rails.
-- Persistent Home/Player navigation around one libmpv instance. Returning Home pauses playback; Resume returns to the same loaded media during the current session.
-- Local Open Video actions on the homepage and hero; homepage cards intentionally route to the real local-file workflow rather than pretending to provide a streaming backend.
-- Native transition curtain compatible with the embedded Windows mpv child window.
+## 2026-09-23 — v0.2.1 LAMBDA Player / complete Vui CSS
 
 ### Changed
-- Restored the previously developed Vui-native player chrome and integrated it as the Player page instead of replacing the playback backend.
-- Added a Vui Home control to the player and scoped playback keyboard shortcuts to the Player page.
-- Project version bumped to 0.3.0 and CMake now builds `src/homepage.{h,cpp}`.
-- The production interface uses Windows' local Segoe UI family rather than Google Fonts, so the UI remains offline and adds no font package/license dependency.
+- Product identity changed to **LAMBDA Player**; CMake project/target, application metadata, window titles, portable executable and CI artifact/release names now use the new identity.
+- Active version reset to **0.2.1**. Current-branch v0.3.x version labels were removed from the maintained docs/version map.
+- Home uses the real local Vui `index.html` + `home.css`.
+- Player uses the real local Vui `player.html` + `styles.css` with only integration overrides needed for a real native video surface and working settings.
+- Qt WebChannel connects the CSS player controls to the existing C++ actions and state.
+- CSS settings expose real audio/subtitle tracks, external subtitle loading, playback speed and RIFE interpolation modes.
 
 ### Preserved
-- Existing libmpv `wid` embedding, `hwdec=auto-safe`, `absolute+exact` seeking, subtitle/audio switching, fullscreen behavior and RIFE/VapourSynth integration.
-- RIFE continues to add/remove only `@novarife`, and `VSSCRIPT_PATH` remains configured before `mpv_create()`.
+- libmpv native `wid` rendering into `video_`.
+- Existing mpv playback, `hwdec=auto-safe`, chapter metadata, playlist-next, volume/mute, `absolute+exact` seeking, fullscreen keyboard behavior and track selection.
+- Existing RIFE/VapourSynth runtime, pins and failure fallback. Only `@novarife` is managed.
 
-### Verification
-- GitHub Actions build verification is performed immediately after push.
-- CI compilation/package success is not claimed as runtime playback verification; MP4/MKV, track controls, fullscreen and RIFE still need Windows artifact testing.
+### Packaging
+- Qt WebEngineWidgets and WebChannel are deployed with the portable package.
+- Inter remains locally bundled from its pinned upstream commit; the Vui surfaces do not require network resources.
+- Portable output is `LambdaPlayer.exe`; CI artifact is `LAMBDA-Player-Windows-x64`.
 
 ## 2026-09-23 — Frame-rate labels and 60 fps mode
 
@@ -76,27 +55,27 @@ The README keeps the user-facing permanent version history. These chronological 
 ## 2026-09-23 — RIFE 2× activation fix
 
 ### Fixed
-- Selecting RIFE 2× failed with "mpv could not create the VapourSynth filter: error running command" (user report on the first RIFE build). Cause: on Windows mpv snapshots the process environment once, on its first `getenv()` call (`osdep/io.c`), so the `VSSCRIPT_PATH` NovaPlayer set when RIFE was selected was never seen and mpv could not find `VSScript.dll`. Reproduced with the pinned `libmpv-2.dll`.
+- Selecting RIFE 2× failed with "mpv could not create the VapourSynth filter: error running command" (user report on the first RIFE build). Cause: on Windows mpv snapshots the process environment once, on its first `getenv()` call (`osdep/io.c`), so the `VSSCRIPT_PATH` LAMBDA Player set when RIFE was selected was never seen and mpv could not find `VSScript.dll`. Reproduced with the pinned `libmpv-2.dll`.
 - Fix: `VSSCRIPT_PATH` is now set before `mpv_create()`, and `vsscript.dll` is additionally preloaded by full path before the filter is added, so mpv's by-name fallback finds it. Both variants were verified against the pinned `libmpv-2.dll` (24 fps → 48 fps); the old order still reproduces the error.
 
 ## 2026-09-23 — RIFE 2× frame interpolation (first milestone)
 
 ### Added
 - `Frame Interpolation: Off | RIFE 2×` selector in the control bar (default Off). RIFE 2× adds the labelled mpv video filter `@novarife:vapoursynth=file=<rife.vpy>:user-data=<runtime dir>`; Off removes only that filter and leaves the rest of the video-filter chain untouched.
-- `src/interpolationcontroller.{h,cpp}`: minimal glue that locates the bundled runtime, checks the required files, sets `VSSCRIPT_PATH`/`PATH` for libmpv's VSScript lookup, adds/removes the filter and detects mpv's "Disabling filter novarife because it has failed" log message to fall back to Off with a user-visible error. No inference code lives in NovaPlayer.
+- `src/interpolationcontroller.{h,cpp}`: minimal glue that locates the bundled runtime, checks the required files, sets `VSSCRIPT_PATH`/`PATH` for libmpv's VSScript lookup, adds/removes the filter and detects mpv's "Disabling filter novarife because it has failed" log message to fall back to Off with a user-visible error. No inference code lives in LAMBDA Player.
 - `resources/rife/rife.vpy`: VapourSynth script adapted from the MIT-licensed `Lafourkad/mpv-RIFE` structure. Uses `misc.SCDetect` for scene changes, converts YUV→RGBS with the matrix taken from mpv's frame properties, runs `rife.RIFE(..., model_path=<rife-v4.6_ensembleFalse>, factor_num=2, factor_den=1, sc=True)` and converts back to the source pixel format. All paths are relative to the runtime directory; no hardcoded machine paths.
 - `.github/scripts/assemble-rife-runtime.ps1`: assembles the portable runtime from pinned, SHA-256-verified downloads: Python 3.12.10 embeddable, VapourSynth R80 (wheel extracted into `vapoursynth/Lib/site-packages`), VapourSynth-RIFE-ncnn-Vulkan `r9_mod_v33` (`librife_windows_x86-64.dll`), RIFE v4.6 model files from plugin commit `c3ec6aab`, and vs-miscfilters-obsolete R2 (`MiscFilters.dll`).
 - `THIRD_PARTY_NOTICES.md` and `licenses/` with verbatim license texts for mpv, Python, VapourSynth, the RIFE plugin, rife-ncnn-vulkan, ncnn, the RIFE model, vs-miscfilters-obsolete and mpv-RIFE; both are copied into the portable package.
 
 ### Changed
 - `Build Windows Portable` now pins libmpv to shinchiro/mpv-winbuild-cmake release `20260923` (`mpv-dev-x86_64-20260923-git-6fd80b2003.7z`, SHA-256 verified) instead of downloading `latest`; this exact build was verified to contain mpv's `vapoursynth` filter and to load `VSScript.dll` at runtime.
-- The workflow additionally copies the MSVC 2022 runtime DLLs app-locally (required by Qt, VapourSynth and the RIFE plugin) and runs the RIFE runtime assembly before uploading `NovaPlayer-Windows-x64`.
+- The workflow additionally copies the MSVC 2022 runtime DLLs app-locally (required by Qt, VapourSynth and the RIFE plugin) and runs the RIFE runtime assembly before uploading `LAMBDA-Player-Windows-x64`.
 - mpv error-level log messages are now requested (`mpv_request_log_messages(mpv, "error")`) and forwarded to the interpolation controller.
 - Project version bumped to 0.2.0; README rewritten for the current feature set.
 
 ### Verification
 - User runtime-verified the MKV seeking / subtitle fixes from commit `3314ef13` (progress-bar seeking, embedded subtitles, external subtitles, multiple audio tracks, fullscreen overlay) before this milestone started.
-- Local runtime verification of the interpolation stack was done with the exact pinned `mpv.exe` build (same code as `libmpv-2.dll`) plus the exact pinned runtime on Windows 11 / AMD Radeon RX 9070 XT: 24 fps → 47.99 fps and 30 fps → 60.00 fps (`estimated-vf-fps`), seek, pause/resume, filter remove/re-add, `hwdec=auto-safe` (d3d11va with mpv's automatic HW download), and the failure paths (missing VSScript, script error, missing model → playback continues, filter disabled). See `HANDOFF.md` for details and for what is not yet verified inside `NovaPlayer.exe` itself.
+- Local runtime verification of the interpolation stack was done with the exact pinned `mpv.exe` build (same code as `libmpv-2.dll`) plus the exact pinned runtime on Windows 11 / AMD Radeon RX 9070 XT: 24 fps → 47.99 fps and 30 fps → 60.00 fps (`estimated-vf-fps`), seek, pause/resume, filter remove/re-add, `hwdec=auto-safe` (d3d11va with mpv's automatic HW download), and the failure paths (missing VSScript, script error, missing model → playback continues, filter disabled). See `HANDOFF.md` for details and for what is not yet verified inside `LambdaPlayer.exe` itself.
 
 ## 2026-09-23 — base player
 

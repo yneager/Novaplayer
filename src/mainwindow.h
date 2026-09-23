@@ -22,6 +22,7 @@ class QTimer;
 class QVBoxLayout;
 class QWidget;
 class HomePage;
+class PlayerChrome;
 class InterpolationController;
 
 class MainWindow final : public QMainWindow
@@ -99,6 +100,7 @@ private:
     void setMpvPropertyInt64(const char *name, qint64 value);
     void command(const QStringList &args);
     void updateTimeLabel();
+    void syncChromeSettings();
     void showInterpolationError(const QString &message);
 
     static QString formatTime(double seconds);
@@ -110,6 +112,7 @@ private:
     QWidget *appRoot_ = nullptr;
     QStackedWidget *stack_ = nullptr;
     HomePage *homePage_ = nullptr;
+    PlayerChrome *playerChrome_ = nullptr;
     QWidget *root_ = nullptr;
     QWidget *transitionOverlay_ = nullptr;
     QSequentialAnimationGroup *pageTransition_ = nullptr;

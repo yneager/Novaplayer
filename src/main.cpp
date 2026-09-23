@@ -10,8 +10,8 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     std::setlocale(LC_NUMERIC, "C");
 
-    app.setApplicationName("NovaPlayer");
-    app.setOrganizationName("NovaPlayer");
+    app.setApplicationName("LAMBDA Player");
+    app.setOrganizationName("LAMBDA");
     app.setStyle(QStyleFactory::create("Fusion"));
 
     app.setStyleSheet(R"QSS(

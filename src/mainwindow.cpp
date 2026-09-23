@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "homepage.h"
+#include "playerchrome.h"
 #include "interpolationcontroller.h"
 
 #include <QApplication>
@@ -16,6 +17,8 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPainterPath>
+#include <QRegion>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -38,7 +41,7 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("NovaPlayer");
+    setWindowTitle("LAMBDA Player");
     setAcceptDrops(true);
 
     buildUi();
@@ -98,10 +101,9 @@ void MainWindow::buildUi()
     video_->setAttribute(Qt::WA_DontCreateNativeAncestors);
     video_->setMinimumSize(640, 360);
     video_->setMouseTracking(true);
-    mainLayout_->addWidget(video_, 1);
 
     // Top glass bar: Vui's brand/title region plus two global action buttons.
-    // The concept's share slot is mapped to NovaPlayer's existing Open action
+    // The concept's share slot is mapped to LAMBDA Player's existing Open action
     // rather than inventing a new sharing service.
     topBar_ = new QWidget(root_);
     topBar_->setObjectName("topBar");
@@ -109,7 +111,7 @@ void MainWindow::buildUi()
     topLayout->setContentsMargins(14, 10, 12, 10);
     topLayout->setSpacing(12);
 
-    auto *brand = new QLabel("◉  NOVA", topBar_);
+    auto *brand = new QLabel("◉  LAMBDA", topBar_);
     brand->setObjectName("brandMark");
     brand->setMinimumWidth(92);
     topLayout->addWidget(brand);
@@ -146,7 +148,7 @@ void MainWindow::buildUi()
     topLayout->addWidget(moreButton);
 
     // Four-button Vui quick-action rail. Every button is retained and mapped
-    // onto an existing NovaPlayer action.
+    // onto an existing LAMBDA Player action.
     sideRail_ = new QWidget(root_);
     sideRail_->setObjectName("sideRail");
     auto *railLayout = new QVBoxLayout(sideRail_);
@@ -305,7 +307,7 @@ void MainWindow::buildUi()
     buttonRow->addWidget(fullscreenButton_);
     controlsLayout->addLayout(buttonRow);
 
-    // NovaPlayer-specific controls live in a compact expandable settings row
+    // LAMBDA Player-specific controls live in a compact expandable settings row
     // instead of being lost when adopting Vui's cleaner deck.
     settingsPanel_ = new QWidget(controls_);
     settingsPanel_->setObjectName("settingsPanel");
@@ -353,6 +355,88 @@ void MainWindow::buildUi()
 
     settingsPanel_->setVisible(false);
     controlsLayout->addWidget(settingsPanel_);
+
+    // The real Vui player is rendered by Chromium as CSS/HTML chrome.
+    // libmpv keeps its existing native HWND surface underneath this view.
+    for (QWidget *legacyOverlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
+        legacyOverlay->hide();
+    }
+
+    playerChrome_ = new PlayerChrome(root_);
+    playerChrome_->setGeometry(root_->rect());
+    playerChrome_->show();
+    playerChrome_->raise();
+
+    connect(playerChrome_, &PlayerChrome::openRequested, this, &MainWindow::openFile);
+    connect(playerChrome_, &PlayerChrome::openPathRequested, this, &MainWindow::openPath);
+    connect(playerChrome_, &PlayerChrome::homeRequested, this, &MainWindow::showHome);
+    connect(playerChrome_, &PlayerChrome::togglePauseRequested, this, &MainWindow::togglePause);
+    connect(playerChrome_, &PlayerChrome::nextRequested, this, [this] {
+        command({"playlist-next", "weak"});
+    });
+    connect(playerChrome_, &PlayerChrome::muteRequested, this, &MainWindow::toggleMute);
+    connect(playerChrome_, &PlayerChrome::fullscreenRequested, this, &MainWindow::toggleFullscreen);
+    connect(playerChrome_, &PlayerChrome::activityRequested, this, [this] {
+        if (isFullScreen()) showFullscreenControls();
+    });
+    connect(playerChrome_, &PlayerChrome::loadSubtitleRequested, this, &MainWindow::loadSubtitle);
+    connect(playerChrome_, &PlayerChrome::seekRequested, this, [this](double ratio) {
+        seek_->setValue(qBound(0, qRound(ratio * 1000.0), 1000));
+        seeking_ = true;
+        seekReleased();
+    });
+    connect(playerChrome_, &PlayerChrome::volumeRequested, this, [this](int value) {
+        volume_->setValue(qBound(0, value, 100));
+    });
+    connect(playerChrome_, &PlayerChrome::speedRequested, this, [this](double value) {
+        static const double speeds[] = {0.5, 0.75, 1.0, 1.25, 1.5, 2.0};
+        int best = 2;
+        double delta = 100.0;
+        for (int i = 0; i < 6; ++i) {
+            const double d = std::abs(speeds[i] - value);
+            if (d < delta) {
+                delta = d;
+                best = i;
+            }
+        }
+        if (speed_->currentIndex() == best) {
+            setMpvPropertyDouble("speed", speeds[best]);
+            playerChrome_->setSpeed(speeds[best]);
+        } else {
+            speed_->setCurrentIndex(best);
+        }
+    });
+    connect(playerChrome_, &PlayerChrome::audioTrackRequested, this, [this](int index) {
+        if (index >= 0 && index < audioTrack_->count()) audioTrack_->setCurrentIndex(index);
+    });
+    connect(playerChrome_, &PlayerChrome::subtitleTrackRequested, this, [this](int index) {
+        if (index >= 0 && index < subtitleTrack_->count()) subtitleTrack_->setCurrentIndex(index);
+    });
+    connect(playerChrome_, &PlayerChrome::interpolationRequested, this, [this](int index) {
+        if (index >= 0 && index < interpolationMode_->count()) interpolationMode_->setCurrentIndex(index);
+    });
+    connect(playerChrome_, &PlayerChrome::videoRectChanged, this,
+            [this](int x, int y, int width, int height, int radius) {
+        if (!video_ || width <= 0 || height <= 0) return;
+        video_->setGeometry(x, y, width, height);
+        if (radius > 0) {
+            QPainterPath path;
+            path.addRoundedRect(QRectF(0, 0, width, height), radius, radius);
+            video_->setMask(QRegion(path.toFillPolygon().toPolygon()));
+        } else {
+            video_->clearMask();
+        }
+        playerChrome_->raise();
+    });
+    connect(playerChrome_, &PlayerChrome::ready, this, [this] {
+        updatePlaybackUi();
+        updateTimeLabel();
+        updateCenterState();
+        updateChapterInfo();
+        updateQualityBadge();
+        syncChromeSettings();
+        layoutOverlayWidgets();
+    });
 
     setCentralWidget(appRoot_);
 
@@ -462,11 +546,10 @@ void MainWindow::initMpv()
 
     mpv_set_wakeup_callback(mpv_, &MainWindow::wakeup, this);
 
-    // libmpv owns a native video child window. Make the Vui overlay surfaces
-    // native siblings too so they reliably stay above the video HWND on Windows.
-    for (QWidget *overlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
-        overlay->setAttribute(Qt::WA_NativeWindow);
-        overlay->winId();
+    // The Chromium player chrome is a sibling above the native libmpv HWND.
+    // Do not recreate or replace the mpv render target.
+    if (playerChrome_) {
+        playerChrome_->raise();
     }
 
     setMpvPropertyDouble("volume", 80);
@@ -530,6 +613,10 @@ void MainWindow::handleEvent(mpv_event *event)
             homePage_->setCurrentMedia(QFileInfo(currentPath_).fileName(), true);
         }
         mediaEyebrow_->setText("NOW PLAYING");
+        if (playerChrome_) {
+            playerChrome_->setMediaLoaded(true);
+            playerChrome_->setMediaTitle(QFileInfo(currentPath_).fileName(), "NOW PLAYING");
+        }
         updatePlaybackUi();
         updateCenterState();
         QTimer::singleShot(0, this, &MainWindow::refreshTracks);
@@ -568,11 +655,13 @@ void MainWindow::interpolationModeChanged(int index)
         const QSignalBlocker blocker(interpolationMode_);
         interpolationMode_->setCurrentIndex(0);
         updateQualityBadge();
+        syncChromeSettings();
         showInterpolationError(error);
         return;
     }
 
     updateQualityBadge();
+    syncChromeSettings();
 }
 
 QString MainWindow::formatFps(double fps)
@@ -622,6 +711,7 @@ void MainWindow::updateInterpolationLabels()
                                          .arg(formatFps(fps))
                                    : QString("This video does not report a frame rate, so 60 fps mode was turned off."));
     }
+    syncChromeSettings();
 }
 
 void MainWindow::interpolationDeactivated(const QString &reason)
@@ -629,6 +719,7 @@ void MainWindow::interpolationDeactivated(const QString &reason)
     const QSignalBlocker blocker(interpolationMode_);
     interpolationMode_->setCurrentIndex(0);
     updateQualityBadge();
+    syncChromeSettings();
     showInterpolationError(reason);
 }
 
@@ -770,6 +861,7 @@ void MainWindow::refreshTracks()
     }
 
     subtitleTrack_->setCurrentIndex(selectedSubtitleIndex);
+    syncChromeSettings();
 }
 
 void MainWindow::audioTrackChanged(int index)
@@ -783,6 +875,7 @@ void MainWindow::audioTrackChanged(int index)
     if (ok) {
         setMpvPropertyInt64("aid", id);
     }
+    syncChromeSettings();
 }
 
 void MainWindow::subtitleTrackChanged(int index)
@@ -804,6 +897,7 @@ void MainWindow::subtitleTrackChanged(int index)
         setMpvPropertyInt64("sid", id);
     }
 
+    syncChromeSettings();
     QTimer::singleShot(0, this, &MainWindow::refreshTracks);
 }
 
@@ -933,35 +1027,25 @@ void MainWindow::updatePlaybackUi()
 
     muteButton_->setText(muted_ ? "MUTE" : "VOL");
     muteButton_->setProperty("active", muted_);
-    muteButton_->style()->unpolish(muteButton_);
-    muteButton_->style()->polish(muteButton_);
+
+    if (playerChrome_) {
+        playerChrome_->setPlaybackState(paused_, muted_);
+    }
 }
+
 
 void MainWindow::updateCenterState()
 {
-    if (!centerState_) {
-        return;
+    // Native controls are retained only as backend state containers.
+    // The visible center state is the real Vui CSS element.
+    if (centerState_) centerState_->hide();
+    if (playerChrome_) {
+        playerChrome_->setMediaLoaded(mediaLoaded_);
+        playerChrome_->setPlaybackState(paused_, muted_);
     }
-
-    if (!mediaLoaded_) {
-        centerKicker_->setText("READY");
-        centerText_->setText("Open or drop a video");
-        centerState_->show();
-    } else if (paused_) {
-        centerKicker_->setText("PAUSED");
-        centerText_->setText("Press play to continue");
-        centerState_->show();
-    } else {
-        centerState_->hide();
-    }
-
-    if (isFullScreen() && !fullscreenControlsVisible_) {
-        centerState_->hide();
-    }
-
     layoutOverlayWidgets();
-    raiseOverlayWidgets();
 }
+
 
 void MainWindow::updateChapterInfo()
 {
@@ -974,16 +1058,20 @@ void MainWindow::updateChapterInfo()
     if (chapter < 0 || chapterCount <= 0) {
         chapterIndexLabel_->setText("--");
         chapterTitleLabel_->setText("No chapters");
+        if (playerChrome_) playerChrome_->setChapter("--", "No chapters");
         return;
     }
 
-    chapterIndexLabel_->setText(QString("%1").arg(chapter + 1, 2, 10, QChar('0')));
+    const QString index = QString("%1").arg(chapter + 1, 2, 10, QChar('0'));
     QString title = mpvStringProperty("chapter-list/" + QByteArray::number(chapter) + "/title").trimmed();
     if (title.isEmpty()) {
         title = QString("Chapter %1").arg(chapter + 1);
     }
+    chapterIndexLabel_->setText(index);
     chapterTitleLabel_->setText(title);
+    if (playerChrome_) playerChrome_->setChapter(index, title);
 }
+
 
 void MainWindow::updateQualityBadge()
 {
@@ -1018,97 +1106,48 @@ void MainWindow::updateQualityBadge()
     } else {
         qualitySecondary_->setText("ORIGINAL");
     }
+
+    if (playerChrome_) {
+        playerChrome_->setQuality(qualityPrimary_->text(), qualitySecondary_->text());
+    }
 }
 
 void MainWindow::layoutOverlayWidgets()
 {
-    if (!root_ || !controls_) {
-        return;
+    if (!root_ || !playerChrome_) return;
+
+    playerChrome_->setGeometry(root_->rect());
+    if (video_->geometry().isEmpty() || video_->width() <= 1 || video_->height() <= 1) {
+        video_->setGeometry(root_->rect());
     }
 
-    const int w = root_->width();
-    const int h = root_->height();
-    if (w <= 0 || h <= 0) {
-        return;
+    // Keep all legacy native chrome hidden. The visible controls are CSS.
+    for (QWidget *legacyOverlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
+        if (legacyOverlay) legacyOverlay->hide();
     }
 
-    const int margin = qBound(14, w / 45, 28);
-    const int topHeight = 64;
-    topBar_->setGeometry(margin, margin, qMax(320, w - margin * 2), topHeight);
-
-    const int railWidth = 56;
-    const int railHeight = sideRail_->sizeHint().height();
-    const int railY = qMax(margin + topHeight + 14, (h - railHeight) / 2);
-    sideRail_->setGeometry(margin, railY, railWidth, railHeight);
-
-    qualityBadge_->adjustSize();
-    const QSize badgeSize = qualityBadge_->sizeHint();
-    qualityBadge_->setGeometry(
-        qMax(margin, w - margin - badgeSize.width()),
-        qMax(margin + topHeight + 14, (h - badgeSize.height()) / 2),
-        badgeSize.width(),
-        badgeSize.height());
-
-    centerState_->adjustSize();
-    const QSize centerSize = centerState_->sizeHint();
-    centerState_->setGeometry(
-        qMax(margin, (w - centerSize.width()) / 2),
-        qMax(margin + topHeight, (h - centerSize.height()) / 2 - 12),
-        centerSize.width(),
-        centerSize.height());
-
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
-
-    if (isFullScreen()) {
-        if (controlsSlide_->state() != QAbstractAnimation::Running) {
-            controls_->setGeometry(fullscreenControlsVisible_
-                                       ? fullscreenControlsShownRect()
-                                       : fullscreenControlsHiddenRect());
-        }
-    } else {
-        controls_->setGeometry(fullscreenControlsShownRect());
-        setFullscreenChromeVisible(true);
-        unsetCursor();
-    }
-
-    raiseOverlayWidgets();
+    playerChrome_->raise();
 }
+
 
 void MainWindow::raiseOverlayWidgets()
 {
-    if (!root_) {
-        return;
-    }
-
-    for (QWidget *overlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
-        if (overlay && overlay->isVisible()) {
-            overlay->raise();
-        }
+    if (playerChrome_ && playerChrome_->isVisible()) {
+        playerChrome_->raise();
     }
 }
+
 
 void MainWindow::setFullscreenChromeVisible(bool visible)
 {
-    if (!isFullScreen()) {
-        visible = true;
-    }
-
-    topBar_->setVisible(visible);
-    sideRail_->setVisible(visible);
-    qualityBadge_->setVisible(visible);
-
-    // Do not call updateCenterState() here. layoutOverlayWidgets() calls this
-    // helper, while updateCenterState() calls layoutOverlayWidgets(); calling
-    // back into updateCenterState() would recurse until stack overflow during
-    // application startup.
-    if (!visible) {
-        centerState_->hide();
-    } else if (!mediaLoaded_ || paused_) {
-        centerState_->show();
-    } else {
-        centerState_->hide();
+    if (!isFullScreen()) visible = true;
+    fullscreenControlsVisible_ = visible;
+    if (playerChrome_) playerChrome_->setChromeVisible(visible);
+    for (QWidget *legacyOverlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
+        if (legacyOverlay) legacyOverlay->hide();
     }
 }
+
 
 QRect MainWindow::fullscreenControlsShownRect() const
 {
@@ -1128,84 +1167,41 @@ QRect MainWindow::fullscreenControlsHiddenRect() const
 
 void MainWindow::enterFullscreenControlsMode()
 {
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
+    fullscreenControlsTimer_->stop();
     fullscreenControlsVisible_ = false;
-    controlsSlide_->stop();
-
-    controls_->setGeometry(fullscreenControlsHiddenRect());
-    controls_->hide();
     setFullscreenChromeVisible(false);
+    setCursor(Qt::BlankCursor);
 }
+
 
 void MainWindow::leaveFullscreenControlsMode()
 {
     fullscreenControlsTimer_->stop();
-    controlsSlide_->stop();
     fullscreenControlsVisible_ = true;
     unsetCursor();
-
-    controls_->show();
-    topBar_->show();
-    sideRail_->show();
-    qualityBadge_->show();
-    updateCenterState();
+    setFullscreenChromeVisible(true);
     layoutOverlayWidgets();
 }
 
+
 void MainWindow::showFullscreenControls()
 {
-    if (!isFullScreen()) {
-        return;
-    }
-
-    fullscreenControlsTimer_->start();
+    if (!isFullScreen()) return;
+    fullscreenControlsVisible_ = true;
     unsetCursor();
     setFullscreenChromeVisible(true);
-
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
-    const QRect shown = fullscreenControlsShownRect();
-
-    if (fullscreenControlsVisible_ && controls_->isVisible()) {
-        if (controlsSlide_->state() != QAbstractAnimation::Running) {
-            controls_->setGeometry(shown);
-        }
-        raiseOverlayWidgets();
-        return;
-    }
-
-    fullscreenControlsVisible_ = true;
-    controlsSlide_->stop();
-
-    const QRect start = controls_->isVisible() ? controls_->geometry()
-                                               : fullscreenControlsHiddenRect();
-
-    controls_->setGeometry(start);
-    controls_->show();
-    raiseOverlayWidgets();
-
-    controlsSlide_->setDuration(500);
-    controlsSlide_->setEasingCurve(QEasingCurve::OutCubic);
-    controlsSlide_->setStartValue(start);
-    controlsSlide_->setEndValue(shown);
-    controlsSlide_->start();
+    fullscreenControlsTimer_->start();
 }
+
 
 void MainWindow::hideFullscreenControls()
 {
-    if (!isFullScreen() || !controls_->isVisible()) {
-        return;
-    }
-
+    if (!isFullScreen()) return;
     fullscreenControlsVisible_ = false;
     setFullscreenChromeVisible(false);
-    controlsSlide_->stop();
-
-    controlsSlide_->setDuration(450);
-    controlsSlide_->setEasingCurve(QEasingCurve::InCubic);
-    controlsSlide_->setStartValue(controls_->geometry());
-    controlsSlide_->setEndValue(fullscreenControlsHiddenRect());
-    controlsSlide_->start();
+    setCursor(Qt::BlankCursor);
 }
+
 
 void MainWindow::showHome()
 {
@@ -1227,7 +1223,7 @@ void MainWindow::showHome()
     }
 
     transitionTo(homePage_);
-    setWindowTitle("NovaPlayer");
+    setWindowTitle("LAMBDA Player");
 }
 
 void MainWindow::resumeFromHome()
@@ -1365,19 +1361,28 @@ void MainWindow::openPath(const QString &path)
 
     mediaEyebrow_->setText("LOADING");
     mediaTitle_->setText(fileName);
+    if (playerChrome_) {
+        playerChrome_->setMediaLoaded(false);
+        playerChrome_->setMediaTitle(fileName, "LOADING");
+    }
     centerKicker_->setText("LOADING");
     centerText_->setText(fileName);
-    centerState_->show();
+    centerState_->hide();
 
     command({"loadfile", path, "replace"});
-    setWindowTitle(QString("NovaPlayer — %1").arg(fileName));
+    setWindowTitle(QString("LAMBDA Player — %1").arg(fileName));
     raiseOverlayWidgets();
 }
 
 void MainWindow::togglePause()
 {
+    if (!mediaLoaded_) {
+        openFile();
+        return;
+    }
     setMpvPropertyFlag("pause", !paused_);
 }
+
 
 void MainWindow::toggleMute()
 {
@@ -1386,27 +1391,22 @@ void MainWindow::toggleMute()
 
 void MainWindow::toggleFullscreen()
 {
-    if (!isPlayerVisible()) {
-        return;
-    }
+    if (!isPlayerVisible()) return;
 
     if (isFullScreen()) {
         leaveFullscreenControlsMode();
         showNormal();
-        fullscreenButton_->setToolTip("Fullscreen");
         QTimer::singleShot(0, this, &MainWindow::layoutOverlayWidgets);
     } else {
         enterFullscreenControlsMode();
         showFullScreen();
-        fullscreenButton_->setToolTip("Exit fullscreen");
-
         QTimer::singleShot(0, this, [this] {
             layoutOverlayWidgets();
-            controls_->setGeometry(fullscreenControlsHiddenRect());
             showFullscreenControls();
         });
     }
 }
+
 
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
@@ -1414,20 +1414,12 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
     if (transitionOverlay_) {
         transitionOverlay_->setGeometry(appRoot_->rect());
-        if (transitionOverlay_->isVisible()) {
-            transitionOverlay_->raise();
-        }
+        if (transitionOverlay_->isVisible()) transitionOverlay_->raise();
     }
 
-    if (isPlayerVisible() && isFullScreen()
-        && controlsSlide_->state() == QAbstractAnimation::Running) {
-        controlsSlide_->stop();
-    }
-
-    if (root_) {
-        layoutOverlayWidgets();
-    }
+    if (root_) layoutOverlayWidgets();
 }
+
 
 void MainWindow::seekReleased()
 {
@@ -1443,15 +1435,19 @@ void MainWindow::seekReleased()
 void MainWindow::volumeChanged(int value)
 {
     setMpvPropertyDouble("volume", value);
+    if (playerChrome_) playerChrome_->setVolume(value);
 }
+
 
 void MainWindow::speedChanged(int index)
 {
     static double speeds[] = {0.5, 0.75, 1.0, 1.25, 1.5, 2.0};
     if (index >= 0 && index < 6) {
         setMpvPropertyDouble("speed", speeds[index]);
+        if (playerChrome_) playerChrome_->setSpeed(speeds[index]);
     }
 }
+
 
 void MainWindow::setMpvPropertyFlag(const char *name, bool value)
 {
@@ -1488,6 +1484,35 @@ void MainWindow::updateTimeLabel()
     timeLabel_->setText(QString("%1  /  %2").arg(position, duration));
     timelinePositionLabel_->setText(position);
     timelineDurationLabel_->setText(duration);
+    if (playerChrome_) playerChrome_->setTimeline(position_, duration_);
+}
+
+
+
+void MainWindow::syncChromeSettings()
+{
+    if (!playerChrome_) return;
+
+    QStringList audio;
+    for (int i = 0; i < audioTrack_->count(); ++i) audio << audioTrack_->itemText(i);
+
+    QStringList subtitles;
+    for (int i = 0; i < subtitleTrack_->count(); ++i) subtitles << subtitleTrack_->itemText(i);
+
+    QStringList interpolation;
+    QList<bool> interpolationEnabled;
+    auto *model = qobject_cast<QStandardItemModel *>(interpolationMode_->model());
+    for (int i = 0; i < interpolationMode_->count(); ++i) {
+        interpolation << interpolationMode_->itemText(i);
+        bool enabled = true;
+        if (model && model->item(i)) enabled = model->item(i)->isEnabled();
+        interpolationEnabled << enabled;
+    }
+
+    playerChrome_->setSettings(audio, qMax(0, audioTrack_->currentIndex()),
+                               subtitles, qMax(0, subtitleTrack_->currentIndex()),
+                               interpolation, interpolationEnabled,
+                               qMax(0, interpolationMode_->currentIndex()));
 }
 
 QString MainWindow::formatTime(double seconds)

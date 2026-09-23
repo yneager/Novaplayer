@@ -70,8 +70,23 @@ jobs:
       - name: List package
         shell: pwsh
         run: |
-          Get-ChildItem portable -Recurse -File|Where-Object {$_.FullName -notmatch '\\vapoursynth\\[^\\]+$'}|Select-Object @{n='Path';e={$_.FullName.Substring((Resolve-Path portable).Path.Length)}},Length|Format-Table -AutoSize
+          Get-ChildItem portable -Recurse -File|Where-Object {$_.FullName -notmatch '\\vapoursynth\\[^\\]+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaPlayer-Windows-x64
+          path: portable/
+}|Select-Object @{n='Path';e={$_.FullName.Substring((Resolve-Path portable).Path.Length)}},Length|Format-Table -AutoSize
           "Total size: {0:N1} MB" -f ((Get-ChildItem portable -Recurse -File|Measure-Object Length -Sum).Sum/1MB)
+      - name: Smoke-test packaged app startup
+        shell: pwsh
+        run: |
+          $exe = Join-Path (Resolve-Path portable).Path "NovaPlayer.exe"
+          $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -PassThru
+          Start-Sleep -Seconds 5
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "NovaPlayer exited during startup smoke test with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
       - uses: actions/upload-artifact@v4
         with:
           name: NovaPlayer-Windows-x64

@@ -39,9 +39,10 @@ The native Vui player layer is restored/refined around the existing controls: Ho
 - New files: `src/homepage.h`, `src/homepage.cpp`.
 - UI is compiled into the executable; Windows packaging needs no WebEngine/resources beyond the existing Qt Widgets deployment.
 - The existing pinned libmpv/RIFE packaging is unchanged.
+- CI now launches the packaged `NovaPlayer.exe` for a short startup smoke test after assembling the portable runtime; an immediate crash/startup recursion fails the workflow.
 
 ### Verification status
-- GitHub Actions must compile/package this commit after push.
+- GitHub Actions run #20 compiled and packaged the Vui shell successfully. The follow-up workflow commit adds a packaged-app startup smoke test and must also pass.
 - Runtime behavior must still be tested from the Windows artifact; build success is not runtime proof.
 
 ## Previous Change: README Version History + Frame-Rate Labels / 60 fps Mode

@@ -4,34 +4,10 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
-- **v0.2.1** — Vui native Qt interface refresh; no playback-stack rewrite.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
-
-
-## 2026-09-23 — v0.2.1 Vui interface refresh
-
-### Changed
-- Ported the user-supplied Vui HTML/CSS concept into native Qt widgets while preserving the existing libmpv `wid` playback and RIFE/VapourSynth paths.
-- Rebuilt the player chrome as a top glass bar, four-button side rail, center play state, dynamic quality badge and bottom glass control deck.
-- Moved NovaPlayer-specific Open/audio/subtitle/external-subtitle/RIFE controls into an expandable settings row so the cleaner Vui deck does not remove functionality.
-- Fullscreen continues to use overlay controls and slide/auto-hide behavior without resizing the video.
-
-### Added
-- All Vui control slots are represented: top global actions, four rail buttons, center play, Play, Next, volume, chapter pill, speed, captions, settings, PiP slot and fullscreen.
-- Audio/caption quick buttons open the corresponding real NovaPlayer track selectors.
-- Chapter pill uses mpv chapter metadata.
-- Quality badge uses detected video height and current interpolation mode instead of hardcoding 4K/HDR.
-- PiP is visibly present but disabled because v0.2.1 does not contain a verified PiP implementation.
-
-### Fixed
-- Fixed a v0.2.1 startup stack overflow: the new overlay layout path recursively called `layoutOverlayWidgets() → setFullscreenChromeVisible() → updateCenterState() → layoutOverlayWidgets()`. The visibility helper now updates the center overlay directly without re-entering layout.
-
-### Preserved
-- Existing MKV seeking, audio/subtitle switching, external subtitles, playback speed, hardware decoding, fullscreen behavior and current RIFE modes.
-
 
 ## 2026-09-23 — Frame-rate labels and 60 fps mode
 

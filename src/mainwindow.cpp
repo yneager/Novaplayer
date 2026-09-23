@@ -59,247 +59,50 @@ MainWindow::~MainWindow()
 
 void MainWindow::buildUi()
 {
-    setMinimumSize(900, 560);
-
     root_ = new QWidget(this);
-    root_->setObjectName("root");
-
     mainLayout_ = new QVBoxLayout(root_);
     mainLayout_->setContentsMargins(0, 0, 0, 0);
     mainLayout_->setSpacing(0);
 
     video_ = new QWidget(root_);
-    video_->setObjectName("videoSurface");
     video_->setAttribute(Qt::WA_NativeWindow);
     video_->setAttribute(Qt::WA_DontCreateNativeAncestors);
+    video_->setStyleSheet("background:black;");
     video_->setMinimumSize(640, 360);
     video_->setMouseTracking(true);
     mainLayout_->addWidget(video_, 1);
 
-    // Top glass bar: Vui's brand/title region plus two global action buttons.
-    // The concept's share slot is mapped to NovaPlayer's existing Open action
-    // rather than inventing a new sharing service.
-    topBar_ = new QWidget(root_);
-    topBar_->setObjectName("topBar");
-    auto *topLayout = new QHBoxLayout(topBar_);
-    topLayout->setContentsMargins(14, 10, 12, 10);
-    topLayout->setSpacing(12);
-
-    auto *brand = new QLabel("◉  NOVA", topBar_);
-    brand->setObjectName("brandMark");
-    brand->setMinimumWidth(92);
-    topLayout->addWidget(brand);
-
-    auto *titleStack = new QWidget(topBar_);
-    auto *titleLayout = new QVBoxLayout(titleStack);
-    titleLayout->setContentsMargins(0, 0, 0, 0);
-    titleLayout->setSpacing(1);
-
-    mediaEyebrow_ = new QLabel("READY", titleStack);
-    mediaEyebrow_->setObjectName("eyebrow");
-    mediaTitle_ = new QLabel("Open or drop a video", titleStack);
-    mediaTitle_->setObjectName("mediaTitle");
-    mediaTitle_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    titleLayout->addWidget(mediaEyebrow_);
-    titleLayout->addWidget(mediaTitle_);
-    topLayout->addWidget(titleStack, 1);
-
-    auto makeButton = [](QWidget *parent, const QString &text, const QString &role,
-                         const QString &tooltip) {
-        auto *button = new QPushButton(text, parent);
-        button->setProperty("uiRole", role);
-        button->setToolTip(tooltip);
-        button->setCursor(Qt::PointingHandCursor);
-        button->setFocusPolicy(Qt::StrongFocus);
-        return button;
-    };
-
-    auto *topOpenButton = makeButton(topBar_, "↥", "icon", "Open video");
-    auto *moreButton = makeButton(topBar_, "•••", "icon", "More playback options");
-    topLayout->addWidget(topOpenButton);
-    topLayout->addWidget(moreButton);
-
-    // Four-button Vui quick-action rail. Every button is retained and mapped
-    // onto an existing NovaPlayer action.
-    sideRail_ = new QWidget(root_);
-    sideRail_->setObjectName("sideRail");
-    auto *railLayout = new QVBoxLayout(sideRail_);
-    railLayout->setContentsMargins(8, 8, 8, 8);
-    railLayout->setSpacing(7);
-
-    railPlayerButton_ = makeButton(sideRail_, "▶", "rail", "Play / pause");
-    railPlayerButton_->setProperty("active", true);
-    auto *railAudioButton = makeButton(sideRail_, "♪", "rail", "Audio tracks");
-    auto *railCaptionsButton = makeButton(sideRail_, "CC", "rail", "Subtitle tracks");
-    auto *railCinemaButton = makeButton(sideRail_, "▣", "rail", "Cinema / fullscreen");
-
-    railLayout->addWidget(railPlayerButton_);
-    railLayout->addWidget(railAudioButton);
-    railLayout->addWidget(railCaptionsButton);
-    railLayout->addWidget(railCinemaButton);
-
-    // Center play state from the Vui concept. It appears before a file is
-    // loaded and while playback is paused.
-    centerState_ = new QWidget(root_);
-    centerState_->setAttribute(Qt::WA_TranslucentBackground);
-    auto *centerLayout = new QVBoxLayout(centerState_);
-    centerLayout->setContentsMargins(8, 8, 8, 8);
-    centerLayout->setAlignment(Qt::AlignCenter);
-    centerLayout->setSpacing(8);
-
-    centerPlayButton_ = makeButton(centerState_, "▶", "playCore", "Play / pause");
-    centerKicker_ = new QLabel("READY", centerState_);
-    centerKicker_->setObjectName("centerKicker");
-    centerKicker_->setAlignment(Qt::AlignCenter);
-    centerText_ = new QLabel("Open or drop a video", centerState_);
-    centerText_->setObjectName("mutedLabel");
-    centerText_->setAlignment(Qt::AlignCenter);
-
-    centerLayout->addWidget(centerPlayButton_, 0, Qt::AlignHCenter);
-    centerLayout->addWidget(centerKicker_);
-    centerLayout->addWidget(centerText_);
-
-    // Truthful quality/status badge: resolution + current interpolation path.
-    // We intentionally do not claim HDR unless we actually add verified HDR
-    // metadata detection later.
-    qualityBadge_ = new QWidget(root_);
-    qualityBadge_->setObjectName("qualityBadge");
-    auto *qualityLayout = new QHBoxLayout(qualityBadge_);
-    qualityLayout->setContentsMargins(10, 6, 10, 6);
-    qualityLayout->setSpacing(7);
-    auto *statusDot = new QLabel("●", qualityBadge_);
-    statusDot->setObjectName("statusDot");
-    qualityPrimary_ = new QLabel("VIDEO", qualityBadge_);
-    qualityPrimary_->setObjectName("qualityPrimary");
-    auto *divider = new QLabel("│", qualityBadge_);
-    divider->setObjectName("mutedLabel");
-    qualitySecondary_ = new QLabel("ORIGINAL", qualityBadge_);
-    qualitySecondary_->setObjectName("qualitySecondary");
-    qualityLayout->addWidget(statusDot);
-    qualityLayout->addWidget(qualityPrimary_);
-    qualityLayout->addWidget(divider);
-    qualityLayout->addWidget(qualitySecondary_);
-
-    // Bottom Vui control deck.
     controls_ = new QWidget(root_);
-    controls_->setObjectName("controlDeck");
     auto *controlsLayout = new QVBoxLayout(controls_);
-    controlsLayout->setContentsMargins(16, 12, 16, 12);
-    controlsLayout->setSpacing(8);
-
-    auto *timelineLabels = new QHBoxLayout;
-    timelineLabels->setContentsMargins(1, 0, 1, 0);
-    timelinePositionLabel_ = new QLabel("00:00", controls_);
-    timelinePositionLabel_->setObjectName("timelineLabel");
-    timelineDurationLabel_ = new QLabel("00:00", controls_);
-    timelineDurationLabel_->setObjectName("timelineLabel");
-    timelineLabels->addWidget(timelinePositionLabel_);
-    timelineLabels->addStretch();
-    timelineLabels->addWidget(timelineDurationLabel_);
-    controlsLayout->addLayout(timelineLabels);
+    controlsLayout->setContentsMargins(10, 6, 10, 10);
+    controlsLayout->setSpacing(6);
 
     seek_ = new QSlider(Qt::Horizontal, controls_);
-    seek_->setObjectName("timelineSlider");
     seek_->setRange(0, 1000);
-    seek_->setCursor(Qt::PointingHandCursor);
     connect(seek_, &QSlider::sliderPressed, this, [this] { seeking_ = true; });
     connect(seek_, &QSlider::sliderReleased, this, &MainWindow::seekReleased);
     controlsLayout->addWidget(seek_);
 
-    auto *buttonRow = new QHBoxLayout;
-    buttonRow->setContentsMargins(0, 0, 0, 0);
-    buttonRow->setSpacing(7);
+    auto *trackRow = new QHBoxLayout;
+    trackRow->setContentsMargins(0, 0, 0, 0);
 
-    playButton_ = makeButton(controls_, "▶", "strong", "Play / pause");
-    auto *nextButton = makeButton(controls_, "⏭", "icon", "Next playlist item");
-    muteButton_ = makeButton(controls_, "VOL", "text", "Mute / unmute");
-
-    volume_ = new QSlider(Qt::Horizontal, controls_);
-    volume_->setObjectName("volumeSlider");
-    volume_->setRange(0, 100);
-    volume_->setValue(80);
-    volume_->setFixedWidth(82);
-
-    timeLabel_ = new QLabel("00:00  /  00:00", controls_);
-    timeLabel_->setObjectName("timecode");
-
-    buttonRow->addWidget(playButton_);
-    buttonRow->addWidget(nextButton);
-    buttonRow->addWidget(muteButton_);
-    buttonRow->addWidget(volume_);
-    buttonRow->addWidget(timeLabel_);
-    buttonRow->addStretch(1);
-
-    auto *chapterPill = new QWidget(controls_);
-    chapterPill->setObjectName("chapterPill");
-    auto *chapterLayout = new QHBoxLayout(chapterPill);
-    chapterLayout->setContentsMargins(8, 5, 9, 5);
-    chapterLayout->setSpacing(8);
-
-    chapterIndexLabel_ = new QLabel("--", chapterPill);
-    chapterIndexLabel_->setObjectName("chapterIndex");
-
-    auto *chapterCopy = new QWidget(chapterPill);
-    auto *chapterCopyLayout = new QVBoxLayout(chapterCopy);
-    chapterCopyLayout->setContentsMargins(0, 0, 0, 0);
-    chapterCopyLayout->setSpacing(0);
-    auto *chapterKicker = new QLabel("CHAPTER", chapterCopy);
-    chapterKicker->setObjectName("chapterKicker");
-    chapterTitleLabel_ = new QLabel("No chapters", chapterCopy);
-    chapterTitleLabel_->setObjectName("chapterTitle");
-    chapterCopyLayout->addWidget(chapterKicker);
-    chapterCopyLayout->addWidget(chapterTitleLabel_);
-
-    auto *wave = new QLabel("▂▅▇▃▆", chapterPill);
-    wave->setObjectName("wave");
-
-    chapterLayout->addWidget(chapterIndexLabel_);
-    chapterLayout->addWidget(chapterCopy);
-    chapterLayout->addWidget(wave);
-    buttonRow->addWidget(chapterPill);
-    buttonRow->addStretch(1);
-
-    speed_ = new QComboBox(controls_);
-    speed_->setFixedWidth(72);
-    speed_->addItems({"0.50×", "0.75×", "1.00×", "1.25×", "1.50×", "2.00×"});
-    speed_->setCurrentIndex(2);
-    speed_->setToolTip("Playback speed");
-
-    auto *captionsButton = makeButton(controls_, "CC", "icon", "Subtitle tracks");
-    settingsButton_ = makeButton(controls_, "⚙", "icon", "Settings");
-    auto *pipButton = makeButton(controls_, "▣", "icon", "Picture in picture");
-    pipButton->setEnabled(false);
-    pipButton->setToolTip("Picture in picture is not implemented in v0.2.1");
-    fullscreenButton_ = makeButton(controls_, "⛶", "strong", "Fullscreen");
-
-    buttonRow->addWidget(speed_);
-    buttonRow->addWidget(captionsButton);
-    buttonRow->addWidget(settingsButton_);
-    buttonRow->addWidget(pipButton);
-    buttonRow->addWidget(fullscreenButton_);
-    controlsLayout->addLayout(buttonRow);
-
-    // NovaPlayer-specific controls live in a compact expandable settings row
-    // instead of being lost when adopting Vui's cleaner deck.
-    settingsPanel_ = new QWidget(controls_);
-    settingsPanel_->setObjectName("settingsPanel");
-    auto *settingsLayout = new QHBoxLayout(settingsPanel_);
-    settingsLayout->setContentsMargins(9, 7, 9, 7);
-    settingsLayout->setSpacing(7);
-
-    auto *openButton = makeButton(settingsPanel_, "Open File", "text", "Open video");
-    audioTrack_ = new QComboBox(settingsPanel_);
-    audioTrack_->setMinimumWidth(170);
+    audioTrack_ = new QComboBox(controls_);
+    audioTrack_->setMinimumWidth(190);
     audioTrack_->addItem("No audio tracks");
     audioTrack_->setEnabled(false);
 
-    subtitleTrack_ = new QComboBox(settingsPanel_);
-    subtitleTrack_->setMinimumWidth(170);
+    subtitleTrack_ = new QComboBox(controls_);
+    subtitleTrack_->setMinimumWidth(190);
     subtitleTrack_->addItem("Subtitles Off", QVariant::fromValue<qlonglong>(-1));
 
-    loadSubtitleButton_ = makeButton(settingsPanel_, "Load Subtitle", "text", "Load external subtitle");
+    loadSubtitleButton_ = new QPushButton("Load Subtitle", controls_);
 
-    interpolationMode_ = new QComboBox(settingsPanel_);
+    // Frame interpolation: Off (default, no RIFE overhead) or RIFE 2x via
+    // mpv's vapoursynth filter. See InterpolationController.
+    // Items are labelled with actual frame rates once a file is loaded
+    // (see updateInterpolationLabels): "Original (24 fps)", "48 fps (RIFE)",
+    // "60 fps (RIFE)". Index 0 = Off, 1 = double rate, 2 = 60 fps.
+    interpolationMode_ = new QComboBox(controls_);
     interpolationMode_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     interpolationMode_->addItem("Original");
     interpolationMode_->addItem("Double frame rate (RIFE)");
@@ -307,53 +110,55 @@ void MainWindow::buildUi()
     interpolationMode_->setCurrentIndex(0);
     interpolationMode_->setToolTip("Frame interpolation (RIFE v4.6 via VapourSynth, Vulkan GPU)");
 
-    auto *audioLabel = new QLabel("AUDIO", settingsPanel_);
-    audioLabel->setObjectName("mutedLabel");
-    auto *subLabel = new QLabel("SUBTITLES", settingsPanel_);
-    subLabel->setObjectName("mutedLabel");
-    auto *rifeLabel = new QLabel("INTERPOLATION", settingsPanel_);
-    rifeLabel->setObjectName("mutedLabel");
+    trackRow->addWidget(new QLabel("Audio", controls_));
+    trackRow->addWidget(audioTrack_);
+    trackRow->addSpacing(8);
+    trackRow->addWidget(new QLabel("Subtitles", controls_));
+    trackRow->addWidget(subtitleTrack_);
+    trackRow->addWidget(loadSubtitleButton_);
+    trackRow->addSpacing(8);
+    trackRow->addWidget(new QLabel("Frame Interpolation", controls_));
+    trackRow->addWidget(interpolationMode_);
+    trackRow->addStretch();
 
-    settingsLayout->addWidget(openButton);
-    settingsLayout->addSpacing(4);
-    settingsLayout->addWidget(audioLabel);
-    settingsLayout->addWidget(audioTrack_);
-    settingsLayout->addWidget(subLabel);
-    settingsLayout->addWidget(subtitleTrack_);
-    settingsLayout->addWidget(loadSubtitleButton_);
-    settingsLayout->addWidget(rifeLabel);
-    settingsLayout->addWidget(interpolationMode_);
-    settingsLayout->addStretch();
+    controlsLayout->addLayout(trackRow);
 
-    settingsPanel_->setVisible(false);
-    controlsLayout->addWidget(settingsPanel_);
+    auto *buttonRow = new QHBoxLayout;
+    buttonRow->setContentsMargins(0, 0, 0, 0);
+
+    auto *openButton = new QPushButton("Open", controls_);
+    playButton_ = new QPushButton("Play", controls_);
+    muteButton_ = new QPushButton("Mute", controls_);
+    fullscreenButton_ = new QPushButton("Fullscreen", controls_);
+    timeLabel_ = new QLabel("00:00 / 00:00", controls_);
+
+    volume_ = new QSlider(Qt::Horizontal, controls_);
+    volume_->setRange(0, 100);
+    volume_->setValue(80);
+    volume_->setMaximumWidth(140);
+
+    speed_ = new QComboBox(controls_);
+    speed_->addItems({"0.50x", "0.75x", "1.00x", "1.25x", "1.50x", "2.00x"});
+    speed_->setCurrentIndex(2);
+
+    buttonRow->addWidget(openButton);
+    buttonRow->addWidget(playButton_);
+    buttonRow->addWidget(timeLabel_);
+    buttonRow->addStretch();
+    buttonRow->addWidget(new QLabel("Speed", controls_));
+    buttonRow->addWidget(speed_);
+    buttonRow->addWidget(muteButton_);
+    buttonRow->addWidget(volume_);
+    buttonRow->addWidget(fullscreenButton_);
+
+    controlsLayout->addLayout(buttonRow);
+    mainLayout_->addWidget(controls_);
 
     setCentralWidget(root_);
 
-    connect(topOpenButton, &QPushButton::clicked, this, &MainWindow::openFile);
-    connect(moreButton, &QPushButton::clicked, this, &MainWindow::toggleSettingsPanel);
     connect(openButton, &QPushButton::clicked, this, &MainWindow::openFile);
     connect(loadSubtitleButton_, &QPushButton::clicked, this, &MainWindow::loadSubtitle);
-
     connect(playButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
-    connect(railPlayerButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
-    connect(centerPlayButton_, &QPushButton::clicked, this, &MainWindow::togglePause);
-    connect(nextButton, &QPushButton::clicked, this, [this] {
-        command({"playlist-next", "weak"});
-    });
-
-    connect(railAudioButton, &QPushButton::clicked, this, [this] {
-        showTrackPicker(audioTrack_);
-    });
-    connect(railCaptionsButton, &QPushButton::clicked, this, [this] {
-        showTrackPicker(subtitleTrack_);
-    });
-    connect(captionsButton, &QPushButton::clicked, this, [this] {
-        showTrackPicker(subtitleTrack_);
-    });
-    connect(railCinemaButton, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
-
-    connect(settingsButton_, &QPushButton::clicked, this, &MainWindow::toggleSettingsPanel);
     connect(muteButton_, &QPushButton::clicked, this, &MainWindow::toggleMute);
     connect(fullscreenButton_, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
     connect(volume_, &QSlider::valueChanged, this, &MainWindow::volumeChanged);
@@ -379,14 +184,10 @@ void MainWindow::buildUi()
     });
 
     root_->setMouseTracking(true);
-    for (QWidget *widget : root_->findChildren<QWidget *>()) {
-        widget->setMouseTracking(true);
+    controls_->setMouseTracking(true);
+    for (QWidget *child : root_->findChildren<QWidget *>()) {
+        child->setMouseTracking(true);
     }
-
-    updatePlaybackUi();
-    updateCenterState();
-    updateQualityBadge();
-    layoutOverlayWidgets();
 }
 
 void MainWindow::initMpv()
@@ -417,7 +218,6 @@ void MainWindow::initMpv()
     mpv_observe_property(mpv_, 2, "duration", MPV_FORMAT_DOUBLE);
     mpv_observe_property(mpv_, 3, "pause", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv_, 4, "mute", MPV_FORMAT_FLAG);
-    mpv_observe_property(mpv_, 5, "chapter", MPV_FORMAT_INT64);
 
     // Error-level log messages are needed to notice when mpv disables the
     // RIFE VapourSynth filter after a script/runtime failure.
@@ -429,16 +229,7 @@ void MainWindow::initMpv()
 
     mpv_set_wakeup_callback(mpv_, &MainWindow::wakeup, this);
 
-    // libmpv owns a native video child window. Make the Vui overlay surfaces
-    // native siblings too so they reliably stay above the video HWND on Windows.
-    for (QWidget *overlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
-        overlay->setAttribute(Qt::WA_NativeWindow);
-        overlay->winId();
-    }
-
     setMpvPropertyDouble("volume", 80);
-    layoutOverlayWidgets();
-    raiseOverlayWidgets();
 }
 
 void MainWindow::wakeup(void *ctx)
@@ -482,28 +273,18 @@ void MainWindow::handleEvent(mpv_event *event)
             updateTimeLabel();
         } else if (name == "pause" && property->format == MPV_FORMAT_FLAG) {
             paused_ = *static_cast<int *>(property->data) != 0;
-            updatePlaybackUi();
-            updateCenterState();
+            playButton_->setText(paused_ ? "Play" : "Pause");
         } else if (name == "mute" && property->format == MPV_FORMAT_FLAG) {
             muted_ = *static_cast<int *>(property->data) != 0;
-            updatePlaybackUi();
-        } else if (name == "chapter" && property->format == MPV_FORMAT_INT64) {
-            updateChapterInfo();
+            muteButton_->setText(muted_ ? "Unmute" : "Mute");
         }
     } else if (event->event_id == MPV_EVENT_FILE_LOADED) {
-        mediaLoaded_ = true;
         paused_ = false;
-        mediaEyebrow_->setText("NOW PLAYING");
-        updatePlaybackUi();
-        updateCenterState();
+        playButton_->setText("Pause");
         QTimer::singleShot(0, this, &MainWindow::refreshTracks);
         QTimer::singleShot(0, this, &MainWindow::updateInterpolationLabels);
-        QTimer::singleShot(0, this, &MainWindow::updateChapterInfo);
-        QTimer::singleShot(0, this, &MainWindow::updateQualityBadge);
     } else if (event->event_id == MPV_EVENT_END_FILE) {
-        paused_ = true;
-        updatePlaybackUi();
-        updateCenterState();
+        playButton_->setText("Play");
     } else if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
         auto *message = static_cast<mpv_event_log_message *>(event->data);
         if (message && interpolation_) {
@@ -531,12 +312,8 @@ void MainWindow::interpolationModeChanged(int index)
     if (!interpolation_->setMode(mode, &error)) {
         const QSignalBlocker blocker(interpolationMode_);
         interpolationMode_->setCurrentIndex(0);
-        updateQualityBadge();
         showInterpolationError(error);
-        return;
     }
-
-    updateQualityBadge();
 }
 
 QString MainWindow::formatFps(double fps)
@@ -592,7 +369,6 @@ void MainWindow::interpolationDeactivated(const QString &reason)
 {
     const QSignalBlocker blocker(interpolationMode_);
     interpolationMode_->setCurrentIndex(0);
-    updateQualityBadge();
     showInterpolationError(reason);
 }
 
@@ -847,258 +623,31 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
-void MainWindow::toggleSettingsPanel()
-{
-    settingsVisible_ = !settingsVisible_;
-    settingsPanel_->setVisible(settingsVisible_);
-    settingsButton_->setProperty("active", settingsVisible_);
-    settingsButton_->style()->unpolish(settingsButton_);
-    settingsButton_->style()->polish(settingsButton_);
-
-    controlsHeight_ = controls_->sizeHint().height();
-
-    if (isFullScreen()) {
-        showFullscreenControls();
-    }
-    layoutOverlayWidgets();
-    raiseOverlayWidgets();
-}
-
-void MainWindow::showTrackPicker(QComboBox *combo)
-{
-    if (!combo) {
-        return;
-    }
-
-    if (!settingsVisible_) {
-        settingsVisible_ = true;
-        settingsPanel_->setVisible(true);
-        settingsButton_->setProperty("active", true);
-        settingsButton_->style()->unpolish(settingsButton_);
-        settingsButton_->style()->polish(settingsButton_);
-        controlsHeight_ = controls_->sizeHint().height();
-        layoutOverlayWidgets();
-    }
-
-    if (isFullScreen()) {
-        showFullscreenControls();
-    }
-
-    combo->setFocus(Qt::MouseFocusReason);
-    QTimer::singleShot(0, combo, &QComboBox::showPopup);
-}
-
-void MainWindow::updatePlaybackUi()
-{
-    const QString playGlyph = paused_ ? QStringLiteral("▶") : QStringLiteral("Ⅱ");
-    playButton_->setText(playGlyph);
-    railPlayerButton_->setText(playGlyph);
-    centerPlayButton_->setText("▶");
-
-    muteButton_->setText(muted_ ? "MUTE" : "VOL");
-    muteButton_->setProperty("active", muted_);
-    muteButton_->style()->unpolish(muteButton_);
-    muteButton_->style()->polish(muteButton_);
-}
-
-void MainWindow::updateCenterState()
-{
-    if (!centerState_) {
-        return;
-    }
-
-    if (!mediaLoaded_) {
-        centerKicker_->setText("READY");
-        centerText_->setText("Open or drop a video");
-        centerState_->show();
-    } else if (paused_) {
-        centerKicker_->setText("PAUSED");
-        centerText_->setText("Press play to continue");
-        centerState_->show();
-    } else {
-        centerState_->hide();
-    }
-
-    if (isFullScreen() && !fullscreenControlsVisible_) {
-        centerState_->hide();
-    }
-
-    layoutOverlayWidgets();
-    raiseOverlayWidgets();
-}
-
-void MainWindow::updateChapterInfo()
-{
-    qint64 chapter = -1;
-    qint64 chapterCount = 0;
-
-    mpvInt64Property("chapter", chapter);
-    mpvInt64Property("chapter-list/count", chapterCount);
-
-    if (chapter < 0 || chapterCount <= 0) {
-        chapterIndexLabel_->setText("--");
-        chapterTitleLabel_->setText("No chapters");
-        return;
-    }
-
-    chapterIndexLabel_->setText(QString("%1").arg(chapter + 1, 2, 10, QChar('0')));
-    QString title = mpvStringProperty("chapter-list/" + QByteArray::number(chapter) + "/title").trimmed();
-    if (title.isEmpty()) {
-        title = QString("Chapter %1").arg(chapter + 1);
-    }
-    chapterTitleLabel_->setText(title);
-}
-
-void MainWindow::updateQualityBadge()
-{
-    if (!qualityPrimary_ || !qualitySecondary_) {
-        return;
-    }
-
-    qint64 height = 0;
-    QString quality = "VIDEO";
-
-    if (mpvInt64Property("video-params/h", height) && height > 0) {
-        if (height >= 2160) {
-            quality = "4K";
-        } else if (height >= 1440) {
-            quality = "1440P";
-        } else if (height >= 1080) {
-            quality = "1080P";
-        } else if (height >= 720) {
-            quality = "720P";
-        } else {
-            quality = QString("%1P").arg(height);
-        }
-    }
-
-    qualityPrimary_->setText(quality);
-
-    const int mode = interpolationMode_ ? interpolationMode_->currentIndex() : 0;
-    if (mode == 1) {
-        qualitySecondary_->setText("RIFE DOUBLE");
-    } else if (mode == 2) {
-        qualitySecondary_->setText("RIFE 60");
-    } else {
-        qualitySecondary_->setText("ORIGINAL");
-    }
-}
-
-void MainWindow::layoutOverlayWidgets()
-{
-    if (!root_ || !controls_) {
-        return;
-    }
-
-    const int w = root_->width();
-    const int h = root_->height();
-    if (w <= 0 || h <= 0) {
-        return;
-    }
-
-    const int margin = qBound(14, w / 45, 28);
-    const int topHeight = 64;
-    topBar_->setGeometry(margin, margin, qMax(320, w - margin * 2), topHeight);
-
-    const int railWidth = 56;
-    const int railHeight = sideRail_->sizeHint().height();
-    const int railY = qMax(margin + topHeight + 14, (h - railHeight) / 2);
-    sideRail_->setGeometry(margin, railY, railWidth, railHeight);
-
-    qualityBadge_->adjustSize();
-    const QSize badgeSize = qualityBadge_->sizeHint();
-    qualityBadge_->setGeometry(
-        qMax(margin, w - margin - badgeSize.width()),
-        qMax(margin + topHeight + 14, (h - badgeSize.height()) / 2),
-        badgeSize.width(),
-        badgeSize.height());
-
-    centerState_->adjustSize();
-    const QSize centerSize = centerState_->sizeHint();
-    centerState_->setGeometry(
-        qMax(margin, (w - centerSize.width()) / 2),
-        qMax(margin + topHeight, (h - centerSize.height()) / 2 - 12),
-        centerSize.width(),
-        centerSize.height());
-
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
-
-    if (isFullScreen()) {
-        if (controlsSlide_->state() != QAbstractAnimation::Running) {
-            controls_->setGeometry(fullscreenControlsVisible_
-                                       ? fullscreenControlsShownRect()
-                                       : fullscreenControlsHiddenRect());
-        }
-    } else {
-        controls_->setGeometry(fullscreenControlsShownRect());
-        setFullscreenChromeVisible(true);
-        unsetCursor();
-    }
-
-    raiseOverlayWidgets();
-}
-
-void MainWindow::raiseOverlayWidgets()
-{
-    if (!root_) {
-        return;
-    }
-
-    for (QWidget *overlay : {topBar_, sideRail_, qualityBadge_, centerState_, controls_}) {
-        if (overlay && overlay->isVisible()) {
-            overlay->raise();
-        }
-    }
-}
-
-void MainWindow::setFullscreenChromeVisible(bool visible)
-{
-    if (!isFullScreen()) {
-        visible = true;
-    }
-
-    topBar_->setVisible(visible);
-    sideRail_->setVisible(visible);
-    qualityBadge_->setVisible(visible);
-
-    // Do not call updateCenterState() here. layoutOverlayWidgets() calls this
-    // helper, while updateCenterState() calls layoutOverlayWidgets(); calling
-    // back into updateCenterState() would recurse until stack overflow during
-    // application startup.
-    if (!visible) {
-        centerState_->hide();
-    } else if (!mediaLoaded_ || paused_) {
-        centerState_->show();
-    } else {
-        centerState_->hide();
-    }
-}
-
 QRect MainWindow::fullscreenControlsShownRect() const
 {
-    const int margin = qBound(14, root_->width() / 45, 28);
     const int height = controlsHeight_ > 0 ? controlsHeight_ : controls_->sizeHint().height();
-    return QRect(margin,
-                 qMax(margin, root_->height() - margin - height),
-                 qMax(320, root_->width() - margin * 2),
-                 height);
+    return QRect(0, qMax(0, root_->height() - height), root_->width(), height);
 }
 
 QRect MainWindow::fullscreenControlsHiddenRect() const
 {
-    const QRect shown = fullscreenControlsShownRect();
-    return QRect(shown.x(), root_->height() + 4, shown.width(), shown.height());
+    const int height = controlsHeight_ > 0 ? controlsHeight_ : controls_->sizeHint().height();
+    return QRect(0, root_->height(), root_->width(), height);
 }
 
 void MainWindow::enterFullscreenControlsMode()
 {
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
-    fullscreenControlsVisible_ = false;
-    controlsSlide_->stop();
+    controlsHeight_ = qMax(controls_->height(), controls_->sizeHint().height());
 
+    mainLayout_->removeWidget(controls_);
+    controls_->setParent(root_);
+
+    controls_->setAttribute(Qt::WA_NativeWindow);
+    controls_->winId();
+
+    fullscreenControlsVisible_ = false;
     controls_->setGeometry(fullscreenControlsHiddenRect());
     controls_->hide();
-    setFullscreenChromeVisible(false);
 }
 
 void MainWindow::leaveFullscreenControlsMode()
@@ -1108,12 +657,10 @@ void MainWindow::leaveFullscreenControlsMode()
     fullscreenControlsVisible_ = true;
     unsetCursor();
 
+    controls_->hide();
+    controls_->setParent(root_);
+    mainLayout_->addWidget(controls_);
     controls_->show();
-    topBar_->show();
-    sideRail_->show();
-    qualityBadge_->show();
-    updateCenterState();
-    layoutOverlayWidgets();
 }
 
 void MainWindow::showFullscreenControls()
@@ -1124,28 +671,24 @@ void MainWindow::showFullscreenControls()
 
     fullscreenControlsTimer_->start();
     unsetCursor();
-    setFullscreenChromeVisible(true);
 
-    controlsHeight_ = qMax(controls_->sizeHint().height(), 118);
     const QRect shown = fullscreenControlsShownRect();
 
     if (fullscreenControlsVisible_ && controls_->isVisible()) {
-        if (controlsSlide_->state() != QAbstractAnimation::Running) {
-            controls_->setGeometry(shown);
-        }
-        raiseOverlayWidgets();
+        controls_->setGeometry(shown);
+        controls_->raise();
         return;
     }
 
     fullscreenControlsVisible_ = true;
     controlsSlide_->stop();
 
-    const QRect start = controls_->isVisible() ? controls_->geometry()
-                                               : fullscreenControlsHiddenRect();
+    QRect start = controls_->isVisible() ? controls_->geometry()
+                                         : fullscreenControlsHiddenRect();
 
     controls_->setGeometry(start);
     controls_->show();
-    raiseOverlayWidgets();
+    controls_->raise();
 
     controlsSlide_->setDuration(500);
     controlsSlide_->setEasingCurve(QEasingCurve::OutCubic);
@@ -1161,7 +704,6 @@ void MainWindow::hideFullscreenControls()
     }
 
     fullscreenControlsVisible_ = false;
-    setFullscreenChromeVisible(false);
     controlsSlide_->stop();
 
     controlsSlide_->setDuration(450);
@@ -1206,19 +748,8 @@ void MainWindow::openFile()
 
 void MainWindow::openPath(const QString &path)
 {
-    currentPath_ = path;
-    mediaLoaded_ = false;
-
-    const QString fileName = QFileInfo(path).fileName();
-    mediaEyebrow_->setText("LOADING");
-    mediaTitle_->setText(fileName);
-    centerKicker_->setText("LOADING");
-    centerText_->setText(fileName);
-    centerState_->show();
-
     command({"loadfile", path, "replace"});
-    setWindowTitle(QString("NovaPlayer — %1").arg(fileName));
-    raiseOverlayWidgets();
+    setWindowTitle(QString("NovaPlayer — %1").arg(QFileInfo(path).fileName()));
 }
 
 void MainWindow::togglePause()
@@ -1236,15 +767,13 @@ void MainWindow::toggleFullscreen()
     if (isFullScreen()) {
         leaveFullscreenControlsMode();
         showNormal();
-        fullscreenButton_->setToolTip("Fullscreen");
-        QTimer::singleShot(0, this, &MainWindow::layoutOverlayWidgets);
+        fullscreenButton_->setText("Fullscreen");
     } else {
         enterFullscreenControlsMode();
         showFullScreen();
-        fullscreenButton_->setToolTip("Exit fullscreen");
+        fullscreenButton_->setText("Window");
 
         QTimer::singleShot(0, this, [this] {
-            layoutOverlayWidgets();
             controls_->setGeometry(fullscreenControlsHiddenRect());
             showFullscreenControls();
         });
@@ -1255,11 +784,22 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
 
-    if (isFullScreen() && controlsSlide_->state() == QAbstractAnimation::Running) {
+    if (!isFullScreen() || controls_->parentWidget() != root_) {
+        return;
+    }
+
+    if (controlsSlide_->state() == QAbstractAnimation::Running) {
         controlsSlide_->stop();
     }
 
-    layoutOverlayWidgets();
+    controls_->setGeometry(fullscreenControlsVisible_
+                               ? fullscreenControlsShownRect()
+                               : fullscreenControlsHiddenRect());
+
+    if (fullscreenControlsVisible_) {
+        controls_->show();
+        controls_->raise();
+    }
 }
 
 void MainWindow::seekReleased()
@@ -1315,12 +855,8 @@ void MainWindow::setMpvPropertyInt64(const char *name, qint64 value)
 
 void MainWindow::updateTimeLabel()
 {
-    const QString position = formatTime(position_);
-    const QString duration = formatTime(duration_);
-
-    timeLabel_->setText(QString("%1  /  %2").arg(position, duration));
-    timelinePositionLabel_->setText(position);
-    timelineDurationLabel_->setText(duration);
+    timeLabel_->setText(QString("%1 / %2")
+                            .arg(formatTime(position_), formatTime(duration_)));
 }
 
 QString MainWindow::formatTime(double seconds)

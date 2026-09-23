@@ -12,10 +12,8 @@ NovaPlayer is a small Windows desktop video player implemented in C++20 with Qt 
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `NovaPlayer-Windows-x64`).
 
-## Latest Change: v0.2.1 Vui Native Qt Interface
-The user confirmed the RIFE integration and interpolation modes were working correctly before the v0.2.1 UI work.
-
-v0.2.1 ports the user-supplied `Vui-main` visual concept (HTML/CSS, no playback code) into native Qt widgets. It intentionally keeps the existing libmpv `wid` video surface and RIFE/VapourSynth integration unchanged.
+## Latest Change: README Version History + Frame-Rate Labels / 60 fps Mode
+The user confirmed the current RIFE integration and interpolation modes are working correctly in `NovaPlayer.exe` after the activation fix below.
 
 The selector now has three entries, labelled with the video's real rates:
 - index 0: "Original (N fps)", which is Off;
@@ -25,34 +23,6 @@ The selector now has three entries, labelled with the video's real rates:
 The user asked not to use the name "2×". Labels are refreshed on `MPV_EVENT_FILE_LOADED` from mpv's `container-fps`, using `InterpolationController::normalizedFps()`. The 60 fps entry is disabled for sources at 59 fps or above, and an active 60 fps mode turns off with a message on such files.
 
 `rife.vpy` receives `user-data = "<double|60>|<runtime dir>"`. In 60 mode it uses `factor = 60 / snapped container_fps`, because mpv's `video_in` carries no fps and the plugin's `fps_num` option would throw. Verified with the pinned `mpv.exe`: 24, 25 and 30 fps each became 60 fps, and 60 fps sources were refused cleanly. The C++ UI is build-verified by CI only.
-
-### v0.2.1 startup crash fix
-The first v0.2.1 UI build compiled successfully in Actions run #16 but the user reported that `NovaPlayer.exe` would not run. Code review found a deterministic startup recursion: `layoutOverlayWidgets()` called `setFullscreenChromeVisible(true)`, which called `updateCenterState()`, which called `layoutOverlayWidgets()` again. This repeats until stack overflow before the UI becomes usable.
-
-The fix removes the callback from `setFullscreenChromeVisible()`; that helper now updates center-state visibility directly. Keep the layout/state functions one-way to avoid reintroducing recursive geometry updates.
-
-### v0.2.1 UI control mapping
-All controls from the supplied Vui concept are represented:
-
-- Top action 1 (concept Share slot) → **Open video**. This reuses an existing NovaPlayer action instead of inventing a sharing backend.
-- Top More → toggles the expandable settings row.
-- Side Player → play/pause.
-- Side Audio → reveals settings and opens the audio picker.
-- Side Captions → reveals settings and opens the subtitle picker.
-- Side Cinema → fullscreen.
-- Center play core → play/pause.
-- Bottom Play → play/pause.
-- Bottom Next → mpv `playlist-next weak`.
-- Volume button + slider → mute/unmute + volume.
-- Timeline → existing click/drag seek implementation.
-- Chapter pill → real mpv chapter number/title when available.
-- Speed control → existing speed choices.
-- Bottom Captions → subtitle picker.
-- Settings gear → expandable NovaPlayer controls.
-- PiP → visually present but disabled; there is no verified PiP implementation in v0.2.1.
-- Fullscreen → existing fullscreen behavior.
-
-The expandable settings row preserves Open, audio selection, subtitle selection, external subtitle loading and all current RIFE modes. No playback feature was removed to match the concept.
 
 ## Earlier Fix: RIFE Activation (after user report)
 The first RIFE build (PR #1) was built by CI. When the user selected RIFE 2× it failed with "mpv could not create the VapourSynth filter: error running command".
@@ -157,7 +127,7 @@ GPU selection: not set; the plugin uses `ncnn::get_default_gpu_index()`.
 
 ## Important Files
 - `src/interpolationcontroller.{h,cpp}` — RIFE glue (paths, file checks, `VSSCRIPT_PATH`, `vf add/remove @novarife`, failure detection).
-- `src/mainwindow.{h,cpp}` — v0.2.1 Vui-derived native Qt overlay UI, all playback controls, interpolation combo, mpv log-message forwarding and error dialog.
+- `src/mainwindow.{h,cpp}` — UI; interpolation combo, mpv log-message forwarding, error dialog.
 - `resources/rife/rife.vpy` — VapourSynth script (adapted from MIT `Lafourkad/mpv-RIFE`).
 - `.github/scripts/assemble-rife-runtime.ps1` — pinned, hash-verified runtime assembly.
 - `.github/workflows/windows-portable.yml` — build + package (pinned libmpv, MSVC runtime, RIFE runtime).
@@ -184,7 +154,7 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 ## Do Not Break
 - Keep `Q_OBJECT` + `CMAKE_AUTOMOC` (both `MainWindow` and `InterpolationController` use `Q_OBJECT`).
 - Keep seek flags as one argument (`absolute+exact`).
-- Keep the v0.2.1 Vui overlay layout and the native-widget setup. `video_` remains the libmpv target; top bar, side rail, center state, quality badge and control deck are native sibling overlays so they stay above the Windows video HWND.
+- Keep the fullscreen overlay behaviour and the native-widget setup of `video_`/`controls_`.
 - Never clear the whole mpv `vf` chain; only remove `@novarife`.
 - Do not change dependency pins without updating hashes, `THIRD_PARTY_NOTICES.md` and this file.
 - RIFE must stay optional: any failure must leave normal playback working and the combo on Off.

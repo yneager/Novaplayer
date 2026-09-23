@@ -1,33 +1,10 @@
 # NovaPlayer
 
-**Current version: v0.2.1**
+**Current version: v0.2.0**
 
 NovaPlayer is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
-
-### v0.2.1 — Vui Interface Refresh
-
-This release ports the supplied **Vui** visual concept into NovaPlayer's native Qt interface while keeping the existing libmpv/RIFE playback architecture intact.
-
-**Added / Changed**
-- Replaced the old utility-style control area with a dark glass/depth interface inspired directly by the supplied Vui HTML/CSS concept.
-- Added the Vui top bar with NovaPlayer branding, current media title, an always-visible Open action, and a More/options action.
-- Added the full four-button left quick-action rail:
-  - Player → play/pause.
-  - Audio → opens the audio-track picker.
-  - Captions → opens the subtitle-track picker.
-  - Cinema → fullscreen.
-- Added the center play-state control shown before loading media and while paused.
-- Added a truthful quality/status badge showing detected vertical resolution and whether playback is Original or RIFE.
-- Rebuilt the bottom control deck with timeline labels, seek bar, Play, Next, volume/mute, timecode, chapter indicator, speed, captions, settings, PiP slot, and fullscreen.
-- Added the Vui chapter/scene pill using real mpv chapter metadata when present.
-- Moved NovaPlayer-specific controls (Open, audio tracks, subtitle tracks, external subtitle loading, RIFE mode) into a compact expandable settings row so no existing feature was lost.
-- The original Vui PiP button is present as requested, but is disabled because NovaPlayer does not yet have a verified PiP implementation. v0.2.1 does not pretend to add that feature.
-- Fullscreen chrome still auto-hides and the bottom deck still slides off-screen without resizing the video.
-
-**Preserved**
-- MKV seeking, embedded/external subtitles, multiple audio tracks, playback speed, hardware decoding, fullscreen overlay behavior, RIFE double-frame-rate mode and RIFE 60-fps mode.
 
 ### v0.2.0 — RIFE Frame Interpolation
 

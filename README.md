@@ -110,11 +110,13 @@ This is the original NovaPlayer base-player milestone before RIFE was added.
 
 > **Versioning rule:** when NovaPlayer moves to a new version, add the new version at the top of this section with its **Added**, **Changed** and/or **Fixed** items. Never remove older version entries. Detailed development history remains in [CHANGELOG.md](CHANGELOG.md).
 
-## Automatic Windows build
+## Automatic Windows build and releases
 
-Open **Actions → Build Windows Portable → Run workflow**.
+Open **Actions → Build Windows Portable → Run workflow** for a normal test build.
 
 When it finishes, download the **NovaPlayer-Windows-x64** artifact, extract it and run `NovaPlayer.exe`.
+
+For a public GitHub Release, first update the version in `CMakeLists.txt`, commit it, then push a matching tag such as `v0.3.2`. The same workflow builds and smoke-tests the portable package, creates `NovaPlayer-Windows-x64-v0.3.2.zip`, and publishes it on the repository's **Releases** page automatically. The workflow rejects a tag whose version does not match `CMakeLists.txt`.
 
 No local Qt, Visual Studio, CMake, libmpv, Python or VapourSynth installation is required for this test route. The portable package contains the frame-interpolation runtime.
 

@@ -1,0 +1,55 @@
+name: Build Windows Portable
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: "win64_msvc2022_64"
+          cache: true
+      - name: Download libmpv
+        shell: pwsh
+        run: |
+          $h=@{"User-Agent"="NovaPlayer-GitHub-Actions"}
+          $r=Invoke-RestMethod -Headers $h -Uri "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $a=$r.assets|Where-Object {$_.name -match '^mpv-dev-x86_64-\d+.*\.7z$'}|Where-Object {$_.name -notmatch 'v3|lgpl'}|Select-Object -First 1
+          if(!$a){throw "mpv-dev archive not found"}
+          Invoke-WebRequest -Headers $h -Uri $a.browser_download_url -OutFile mpv-dev.7z
+          New-Item -ItemType Directory -Force deps\mpv|Out-Null
+          7z x mpv-dev.7z "-odeps\mpv" -y
+          $c=Get-ChildItem deps\mpv -Recurse -Filter client.h|Where-Object {$_.FullName -match '[\\/]mpv[\\/]client\.h$'}|Select-Object -First 1
+          $d=Get-ChildItem deps\mpv -Recurse -Filter libmpv-2.dll|Select-Object -First 1
+          if(!$d){$d=Get-ChildItem deps\mpv -Recurse -Filter mpv-2.dll|Select-Object -First 1}
+          if(!$c -or !$d){throw "libmpv files missing"}
+          "MPV_INCLUDE_ROOT=$(Split-Path (Split-Path $c.FullName -Parent) -Parent)"|Out-File $env:GITHUB_ENV -Append
+          "MPV_DLL=$($d.FullName)"|Out-File $env:GITHUB_ENV -Append
+      - name: Generate import library
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          powershell -NoProfile -ExecutionPolicy Bypass -File .github\scripts\make-mpv-lib.ps1 "%MPV_DLL%"
+          echo MPV_LIB=%CD%\deps\mpv-import\mpv.lib>>%GITHUB_ENV%
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMPV_INCLUDE_DIR="$env:MPV_INCLUDE_ROOT" -DMPV_LIBRARY="$env:MPV_LIB"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Package
+        shell: pwsh
+        run: |
+          mkdir portable
+          Copy-Item build\Release\NovaPlayer.exe portable\
+          Copy-Item "$env:MPV_DLL" portable\libmpv-2.dll
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --compiler-runtime portable\NovaPlayer.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaPlayer-Windows-x64
+          path: portable/

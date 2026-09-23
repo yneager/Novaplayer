@@ -15,6 +15,19 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
+    // Smooth scrolling: on the desktop-OpenGL path above, Chromium leaves GPU
+    // rasterization off, so every newly revealed tile of the Vui pages (large
+    // blurs, gradients, glows) is painted on the CPU while scrolling. Measured
+    // on the Home page: 35-43% late frames and up to ~480 ms stalls without
+    // it, 0-1.4% with it. Must be set before Qt WebEngine initialises. Users
+    // can still override it with their own QTWEBENGINE_CHROMIUM_FLAGS
+    // (e.g. --disable-gpu-rasterization).
+    QByteArray chromiumFlags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    if (!chromiumFlags.contains("gpu-rasterization")) {
+        chromiumFlags = (chromiumFlags + " --enable-gpu-rasterization").trimmed();
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags);
+    }
+
     QApplication app(argc, argv);
     std::setlocale(LC_NUMERIC, "C");
 

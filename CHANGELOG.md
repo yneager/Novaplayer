@@ -4,12 +4,29 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.2.3** — smoother scrolling (GPU rasterization enabled for the Vui WebEngine pages).
 - **v0.2.2** — video visible again (libmpv render API under the Vui web chrome, lost-wakeup fix), frameless rounded window with custom controls, mini player, recent files/resume, polished and fully functional UI.
 - **v0.2.1** — LAMBDA Player identity reset; real Vui HTML/CSS on both Home and Player while preserving the native libmpv/RIFE engine.
 - **v0.2.0** — RIFE interpolation milestone: initial RIFE integration, Windows activation fix, dynamic frame-rate labels and 60 fps mode.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
+## 2026-09-24 — v0.2.3 smoother scrolling
+
+### Fixed
+- Janky Home-page scrolling. Since v0.2.2, Qt Quick and Qt WebEngine run on the desktop-OpenGL path, which the OpenGL video surface needs. On that path Chromium reports `rasterization: unavailable_off`, so the Vui pages' large blurs, gradients and glows were rasterized on the CPU while scrolling.
+- `main.cpp` now appends `--enable-gpu-rasterization` to `QTWEBENGINE_CHROMIUM_FLAGS` before `QApplication`. A user-supplied flags value containing `gpu-rasterization` (for example `--disable-gpu-rasterization`) is left untouched. The GPU blocklist is **not** overridden.
+
+### Verification
+- Measured on the Home page with wheel input sent through the WebEngine DevTools protocol (24 notches down, then up), recording `requestAnimationFrame` intervals. Test machine: Windows 11, RX 9070 XT, 60 Hz.
+
+  | Build | Rasterization | Late frames | 95th percentile | Worst frame |
+  |---|---|---|---|---|
+  | v0.2.2 | CPU | 35–43% | 183–300 ms | ~480 ms |
+  | v0.2.3 | GPU (`enabled_force`) | 0% | 16.8 ms | 16.8 ms |
+
+- Video playback under the chrome was re-checked after the change.
 
 ## 2026-09-23 — v0.2.2 working video + frameless polished UI
 

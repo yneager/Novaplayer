@@ -1,10 +1,16 @@
 # LAMBDA Player
 
-**Current version: v0.2.2**
+**Current version: v0.2.3**
 
 LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
 
 ## Version History
+
+### v0.2.3 — Smoother scrolling
+
+- Scrolling the Home page (and any other scrollable part of the Vui interface) is now smooth. The web UI was being painted on the CPU, which stalled frames while scrolling; LAMBDA Player now enables GPU rasterization for its interface.
+- On the test PC, late frames while scrolling dropped from 35–43% to effectively none, and the worst frame dropped from about 480 ms to one screen refresh (16.7 ms).
+- No other behaviour changed.
 
 ### v0.2.2 — Working video + polished window and UI
 

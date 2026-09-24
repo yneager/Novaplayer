@@ -22,6 +22,8 @@ qt_add_library(lambda_stremio STATIC
   src/stremio/contentservice.cpp
   src/stremio/contentservice.h
   src/stremio/json.cpp
+  src/stremio/language.cpp
+  src/stremio/language.h
   src/stremio/json.h
   src/stremio/legacytransport.cpp
   src/stremio/legacytransport.h
@@ -57,6 +59,12 @@ endif()
 
 qt_add_executable(LambdaPlayer WIN32
   src/main.cpp
+  src/addonconfigurewindow.cpp
+  src/addonconfigurewindow.h
+  src/addonsbridge.cpp
+  src/addonsbridge.h
+  src/stremiobackend.cpp
+  src/stremiobackend.h
   src/homepage.cpp
   src/homepage.h
   src/playerchrome.cpp

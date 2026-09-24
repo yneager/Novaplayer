@@ -35,6 +35,9 @@ body{overflow:hidden}
 .lambda-option:hover{color:#fff;border-color:rgba(120,245,231,.24);background:rgba(255,255,255,.07)}
 .lambda-option.selected{color:#07100f;background:linear-gradient(135deg,#d1fff9,#79eddd);border-color:#b6fff6}
 .lambda-option:disabled{opacity:.28;cursor:not-allowed}
+.lambda-option-group{flex:0 0 100%;margin:6px 0 1px;color:rgba(120,245,231,.62);font-size:8px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.lambda-option-group:first-child{margin-top:0}
+.lambda-group[data-group=subtitles] .lambda-options{max-height:min(46vh,380px);overflow-y:auto;padding-right:4px;scrollbar-width:thin}
 .lambda-action{width:100%;margin-top:8px}
 .lambda-settings[data-focus="audio"] .lambda-group:not([data-group="audio"]),
 .lambda-settings[data-focus="subtitles"] .lambda-group:not([data-group="subtitles"]){display:none}

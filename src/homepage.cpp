@@ -122,7 +122,7 @@ protected:
 
 } // namespace
 
-HomePage::HomePage(QWidget *parent)
+HomePage::HomePage(QObject *addonsBridge, QWidget *parent)
     : QWidget(parent)
 {
     setObjectName("homePage");
@@ -139,6 +139,8 @@ HomePage::HomePage(QWidget *parent)
     view_->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     view_->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
     view_->settings()->setAttribute(QWebEngineSettings::ShowScrollBars, true);
+    // Addon posters, backgrounds and logos are remote images.
+    view_->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
 
     auto *page = new VuiPage(view_);
     // Paint the app background while loading instead of Chromium's white.
@@ -167,6 +169,10 @@ HomePage::HomePage(QWidget *parent)
     auto *channel = new QWebChannel(page);
     channel->registerObject("homeBridge", bridge);
     channel->registerObject("windowBridge", windowBridge_);
+    if (addonsBridge) {
+        // Registered before the page loads so qwebchannel.js sees it.
+        channel->registerObject("stremio", addonsBridge);
+    }
     page->setWebChannel(channel);
 
     connect(bridge, &HomeBridge::readyRequested, this, [this] {

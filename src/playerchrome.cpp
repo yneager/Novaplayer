@@ -233,10 +233,11 @@ void PlayerChrome::playEnterAnimation() { runScript("window.LambdaWindow&&Lambda
 void PlayerChrome::setSettings(const QStringList &audio, int audioIndex,
                                const QStringList &subtitles, int subtitleIndex,
                                const QStringList &interpolation, const QList<bool> &interpolationEnabled,
-                               int interpolationIndex)
+                               int interpolationIndex, const QStringList &subtitleGroups)
 {
     audio_ = audio;
     subtitles_ = subtitles;
+    subtitleGroups_ = subtitleGroups;
     interpolation_ = interpolation;
     interpolationEnabled_ = interpolationEnabled;
     audioIndex_ = audioIndex;
@@ -303,7 +304,13 @@ void PlayerChrome::pushSettings()
     if (!ready_ || !view_) return;
     QJsonObject settings;
     settings.insert("audio", optionArray(audio_));
-    settings.insert("subtitles", optionArray(subtitles_));
+    QJsonArray subtitleItems = optionArray(subtitles_);
+    for (int i = 0; i < subtitleItems.size() && i < subtitleGroups_.size(); ++i) {
+        QJsonObject item = subtitleItems[i].toObject();
+        item.insert("group", subtitleGroups_[i]);
+        subtitleItems[i] = item;
+    }
+    settings.insert("subtitles", subtitleItems);
     settings.insert("interpolation", optionArray(interpolation_, &interpolationEnabled_));
     settings.insert("audioIndex", audioIndex_);
     settings.insert("subtitleIndex", subtitleIndex_);

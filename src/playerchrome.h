@@ -38,7 +38,7 @@ public:
     void setSettings(const QStringList &audio, int audioIndex,
                      const QStringList &subtitles, int subtitleIndex,
                      const QStringList &interpolation, const QList<bool> &interpolationEnabled,
-                     int interpolationIndex);
+                     int interpolationIndex, const QStringList &subtitleGroups = {});
     void setActive(bool active);
 
 signals:
@@ -94,6 +94,7 @@ private:
     QString chapterTitle_ = "No chapters";
     QStringList audio_;
     QStringList subtitles_;
+    QStringList subtitleGroups_;
     QStringList interpolation_;
     QList<bool> interpolationEnabled_;
     int audioIndex_ = 0;

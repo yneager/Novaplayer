@@ -12,7 +12,7 @@ class HomePage final : public QWidget
     Q_OBJECT
 
 public:
-    explicit HomePage(QWidget *parent = nullptr);
+    explicit HomePage(QObject *addonsBridge, QWidget *parent = nullptr);
 
     WindowBridge *windowBridge() const { return windowBridge_; }
 

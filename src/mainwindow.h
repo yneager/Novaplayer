@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QHash>
 #include <QMainWindow>
 #include <QRect>
 #include <QSize>
@@ -8,6 +9,10 @@
 #include <QStringList>
 #include <QVariantList>
 #include <mpv/client.h>
+
+#include "stremiobackend.h"
+
+#include <optional>
 
 class QComboBox;
 class QDragEnterEvent;
@@ -30,6 +35,7 @@ class InterpolationController;
 class MpvVideoWidget;
 class QShowEvent;
 class WindowBridge;
+class AddonsBridge;
 
 class MainWindow final : public QMainWindow
 {
@@ -40,6 +46,8 @@ public:
     ~MainWindow() override;
 
     void openPath(const QString &path);
+    // Plays a resolved addon stream through the same libmpv pipeline.
+    void openStream(const AddonPlayback &playback);
 
 signals:
     void mpvWakeup();
@@ -126,6 +134,14 @@ private:
     void setAlwaysOnTop(bool onTop);
 
     void loadRecents();
+
+    // Addon playback: request headers and subtitle addons.
+    void setMpvStringList(const char *name, const QStringList &values);
+    void clearAddonSession();
+    void fetchAddonSubtitles();
+    void addAddonSubtitles(const QList<stremio::Subtitles> &subtitles, const QString &addonName);
+    void selectAddonSubtitle(int index);
+    QString currentMediaTitle() const;
     void saveRecents();
     int recentIndex(const QString &path) const;
     void addRecent(const QString &path);
@@ -202,6 +218,18 @@ private:
     QPropertyAnimation *controlsSlide_ = nullptr;
 
     QString currentPath_;
+
+    struct AddonSubtitle
+    {
+        stremio::Subtitles subtitle;
+        QString addonName;
+    };
+    StremioBackend *stremio_ = nullptr;
+    AddonsBridge *addonsBridge_ = nullptr;
+    std::optional<AddonPlayback> addonPlayback_;
+    QList<AddonSubtitle> addonSubtitles_;
+    QHash<QString, QString> addonSubtitleLabels_; // url -> label once loaded into mpv
+    int subtitleGeneration_ = 0;
     QString nextPath_;
     QVariantList recents_;
     QRect miniRestoreGeometry_;

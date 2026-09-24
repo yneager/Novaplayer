@@ -179,7 +179,16 @@
       section.appendChild(h);
       const options = document.createElement('div');
       options.className = 'lambda-options';
+      let lastGroup = '';
       (items || []).forEach((item, index) => {
+        // Subtitle sources (Embedded / External / Add-ons) get a sub-heading.
+        if (item.group && item.group !== lastGroup) {
+          const heading = document.createElement('div');
+          heading.className = 'lambda-option-group';
+          heading.textContent = item.group;
+          options.appendChild(heading);
+        }
+        lastGroup = item.group || lastGroup;
         const b = document.createElement('button');
         b.className = 'lambda-option' + (index === selected ? ' selected' : '');
         b.textContent = item.label || String(item);

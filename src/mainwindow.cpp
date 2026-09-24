@@ -1,4 +1,7 @@
 #include "mainwindow.h"
+#include "addonsbridge.h"
+#include "stremio/addonurl.h"
+#include "stremio/language.h"
 #include "homepage.h"
 #include "playerchrome.h"
 #include "interpolationcontroller.h"
@@ -143,7 +146,13 @@ void MainWindow::buildUi()
     stack_->setObjectName("applicationStack");
     appLayout->addWidget(stack_);
 
-    homePage_ = new HomePage(stack_);
+    // Stremio addon client: shared by the Home page (catalogs, details,
+    // sources) and this window (playback, subtitle addons).
+    stremio_ = new StremioBackend(this);
+    addonsBridge_ = new AddonsBridge(stremio_, this, this);
+    connect(stremio_, &StremioBackend::playRequested, this, &MainWindow::openStream);
+
+    homePage_ = new HomePage(addonsBridge_, stack_);
     root_ = new QWidget(stack_);
     root_->setObjectName("playerPage");
     stack_->addWidget(homePage_);
@@ -712,19 +721,27 @@ void MainWindow::handleEvent(mpv_event *event)
         mediaLoaded_ = true;
         paused_ = false;
         eofReached_ = false;
-        const QString fileName = QFileInfo(currentPath_).fileName();
-        addRecent(currentPath_);
+        const QString fileName = currentMediaTitle();
+        if (!addonPlayback_) {
+            addRecent(currentPath_);
+        }
         if (homePage_ && !currentPath_.isEmpty()) {
             homePage_->setCurrentMedia(fileName, currentPath_, true);
         }
-        mediaEyebrow_->setText("NOW PLAYING");
+        const QString eyebrow = addonPlayback_ && !addonPlayback_->addonName.isEmpty()
+            ? QStringLiteral("NOW PLAYING · %1").arg(addonPlayback_->addonName.toUpper())
+            : QStringLiteral("NOW PLAYING");
+        mediaEyebrow_->setText(eyebrow);
         if (playerChrome_) {
             playerChrome_->setLoading(false);
             playerChrome_->setFinished(false);
             playerChrome_->setMediaLoaded(true);
-            playerChrome_->setMediaTitle(fileName, "NOW PLAYING");
+            playerChrome_->setMediaTitle(fileName, eyebrow);
         }
-        nextPath_ = findNextInFolder(currentPath_);
+        nextPath_ = addonPlayback_ ? QString() : findNextInFolder(currentPath_);
+        if (addonPlayback_) {
+            fetchAddonSubtitles();
+        }
         if (playerChrome_) playerChrome_->setHasNext(!nextPath_.isEmpty());
         updatePlaybackUi();
         updateCenterState();
@@ -737,9 +754,11 @@ void MainWindow::handleEvent(mpv_event *event)
         if (endFile && endFile->reason == MPV_END_FILE_REASON_ERROR) {
             // The file could not be opened/decoded: tell the user and return
             // the player to its ready state instead of a silent black screen.
-            const QString failedName = QFileInfo(currentPath_).fileName();
+            const QString failedName = currentMediaTitle();
             mediaLoaded_ = false;
-            removeRecent(currentPath_);
+            if (!addonPlayback_) {
+                removeRecent(currentPath_);
+            }
             if (playerChrome_) {
                 playerChrome_->setLoading(false);
                 playerChrome_->setMediaLoaded(false);
@@ -997,12 +1016,35 @@ void MainWindow::refreshTracks()
             if (!details.isEmpty()) {
                 label += QString(" — %1").arg(details.join(" · "));
             }
+            bool external = false;
+            mpvFlagProperty(prefix + "external", external);
+            QString group = external ? QStringLiteral("External") : QStringLiteral("Embedded");
+            const QString externalFile = mpvStringProperty(prefix + "external-filename");
+            if (external && addonSubtitleLabels_.contains(externalFile)) {
+                label = addonSubtitleLabels_.value(externalFile);
+                group = QStringLiteral("Add-ons");
+            }
 
             subtitleTrack_->addItem(label, QVariant::fromValue<qlonglong>(id));
+            subtitleTrack_->setItemData(subtitleTrack_->count() - 1, group, Qt::UserRole + 1);
             if (selected) {
                 selectedSubtitleIndex = subtitleTrack_->count() - 1;
             }
         }
+    }
+
+    // Addon subtitles not loaded yet: fetched by mpv only when chosen.
+    for (int i = 0; i < addonSubtitles_.size(); ++i) {
+        const AddonSubtitle &item = addonSubtitles_[i];
+        if (addonSubtitleLabels_.contains(item.subtitle.url)) {
+            continue;
+        }
+        QString label = QStringLiteral("%1 · %2").arg(stremio::languageName(item.subtitle.lang), item.addonName);
+        if (item.subtitle.label && !item.subtitle.label->isEmpty()) {
+            label += QStringLiteral(" · ") + *item.subtitle.label;
+        }
+        subtitleTrack_->addItem(label, QStringLiteral("addon:%1").arg(i));
+        subtitleTrack_->setItemData(subtitleTrack_->count() - 1, QStringLiteral("Add-ons"), Qt::UserRole + 1);
     }
 
     if (audioTrack_->count() == 0) {
@@ -1037,8 +1079,14 @@ void MainWindow::subtitleTrackChanged(int index)
         return;
     }
 
+    const QVariant data = subtitleTrack_->itemData(index);
+    if (data.typeId() == QMetaType::QString && data.toString().startsWith(QLatin1String("addon:"))) {
+        selectAddonSubtitle(data.toString().mid(6).toInt());
+        return;
+    }
+
     bool ok = false;
-    const qlonglong id = subtitleTrack_->itemData(index).toLongLong(&ok);
+    const qlonglong id = data.toLongLong(&ok);
     if (!ok) {
         return;
     }
@@ -1403,7 +1451,7 @@ void MainWindow::showHome()
         rememberCurrentProgress();
     }
 
-    homePage_->setCurrentMedia(mediaLoaded_ ? QFileInfo(currentPath_).fileName() : QString(),
+    homePage_->setCurrentMedia(mediaLoaded_ ? currentMediaTitle() : QString(),
                                mediaLoaded_ ? currentPath_ : QString(), mediaLoaded_);
     publishRecents();
 
@@ -1648,6 +1696,7 @@ void MainWindow::openPath(const QString &path)
     }
 
     currentPath_ = info.absoluteFilePath();
+    clearAddonSession();
     mediaLoaded_ = false;
     eofReached_ = false;
     nextPath_.clear();
@@ -1680,6 +1729,167 @@ void MainWindow::openPath(const QString &path)
         pendingPath_ = currentPath_;
     }
     setWindowTitle(QString("%1 — LAMBDA Player").arg(fileName));
+}
+
+void MainWindow::openStream(const AddonPlayback &playback)
+{
+    if (playback.source.url.isEmpty()) {
+        return;
+    }
+
+    // Keep the resume position of what is being replaced.
+    if (mediaLoaded_) {
+        rememberCurrentProgress();
+        if (!eofReached_) {
+            command({"write-watch-later-config"});
+        }
+    }
+
+    clearAddonSession();
+    addonPlayback_ = playback;
+    currentPath_ = playback.source.url;
+    mediaLoaded_ = false;
+    eofReached_ = false;
+    nextPath_.clear();
+    position_ = 0.0;
+    duration_ = 0.0;
+
+    // behaviorHints.proxyHeaders.request: sent by mpv for this file only
+    // (cleared again by clearAddonSession for the next file).
+    setMpvStringList("http-header-fields", stremio::StreamResolver::mpvHeaderFields(playback.source.httpHeaders));
+
+    // Subtitles embedded in the stream object (SDK stream.subtitles) are
+    // offered right away; subtitle addons are asked once the file is loaded.
+    addAddonSubtitles(playback.stream.subtitles, playback.addonName);
+
+    const QString title = currentMediaTitle();
+    showPlayer(false);
+    mediaEyebrow_->setText("LOADING");
+    mediaTitle_->setText(title);
+    if (playerChrome_) {
+        playerChrome_->setMediaLoaded(false);
+        playerChrome_->setFinished(false);
+        playerChrome_->setHasNext(false);
+        playerChrome_->setLoading(true);
+        playerChrome_->setMediaTitle(title, playback.source.viaStreamingServer ? "CONNECTING" : "LOADING");
+        playerChrome_->setTimeline(0.0, 0.0);
+    }
+    centerKicker_->setText("LOADING");
+    centerText_->setText(title);
+    centerState_->hide();
+
+    if (video_ && video_->isRenderReady()) {
+        command({"loadfile", currentPath_, "replace"});
+    } else {
+        pendingPath_ = currentPath_;
+    }
+    setWindowTitle(QString("%1 — LAMBDA Player").arg(title));
+}
+
+QString MainWindow::currentMediaTitle() const
+{
+    if (addonPlayback_) {
+        const QString title = addonPlayback_->title.isEmpty()
+            ? stremio::filenameFromUrl(addonPlayback_->source.url)
+            : addonPlayback_->title;
+        return addonPlayback_->episodeLabel.isEmpty() ? title : title + QStringLiteral(" — ") + addonPlayback_->episodeLabel;
+    }
+    return QFileInfo(currentPath_).fileName();
+}
+
+void MainWindow::setMpvStringList(const char *name, const QStringList &values)
+{
+    if (!mpv_) {
+        return;
+    }
+    std::vector<QByteArray> utf8;
+    utf8.reserve(size_t(values.size()));
+    for (const QString &value : values) {
+        utf8.push_back(value.toUtf8());
+    }
+    std::vector<mpv_node> items(utf8.size());
+    for (size_t i = 0; i < utf8.size(); ++i) {
+        items[i].format = MPV_FORMAT_STRING;
+        items[i].u.string = utf8[i].data();
+    }
+    mpv_node_list list{};
+    list.num = int(items.size());
+    list.values = items.data();
+    mpv_node node{};
+    node.format = MPV_FORMAT_NODE_ARRAY;
+    node.u.list = &list;
+    mpv_set_property(mpv_, name, MPV_FORMAT_NODE, &node);
+}
+
+void MainWindow::clearAddonSession()
+{
+    addonPlayback_.reset();
+    addonSubtitles_.clear();
+    addonSubtitleLabels_.clear();
+    ++subtitleGeneration_;
+    setMpvStringList("http-header-fields", {});
+}
+
+void MainWindow::addAddonSubtitles(const QList<stremio::Subtitles> &subtitles, const QString &addonName)
+{
+    bool added = false;
+    for (const stremio::Subtitles &subtitle : subtitles) {
+        const bool duplicate = std::any_of(addonSubtitles_.cbegin(), addonSubtitles_.cend(), [&](const AddonSubtitle &item) {
+            return item.subtitle.url == subtitle.url;
+        });
+        if (!duplicate) {
+            addonSubtitles_.append({subtitle, addonName});
+            added = true;
+        }
+    }
+    if (added && mediaLoaded_) {
+        refreshTracks();
+    }
+}
+
+void MainWindow::fetchAddonSubtitles()
+{
+    if (!addonPlayback_ || !stremio_) {
+        return;
+    }
+    const int generation = ++subtitleGeneration_;
+    const AddonPlayback playback = *addonPlayback_;
+    // stremio-core player.rs: subtitles/{meta type}/{video id} with the
+    // video hash, size and filename of the selected stream.
+    stremio_->videoParams()->fetch(playback.stream, playback.source, this,
+                                   [this, generation, playback](const stremio::VideoParams &params) {
+        if (generation != subtitleGeneration_) {
+            return;
+        }
+        const QList<stremio::PlannedRequest> plan =
+            stremio_->content()->subtitlePlan(playback.type, playback.videoId, params);
+        for (const stremio::PlannedRequest &planned : plan) {
+            const stremio::Descriptor *addon = stremio_->content()->addon(planned.request.base);
+            const QString addonName = addon ? addon->manifest.name : stremio::displayHost(planned.request.base);
+            stremio_->client()->fetchResource(planned.request, this,
+                                              [this, generation, addonName](const stremio::ResourceResult &result) {
+                if (generation != subtitleGeneration_ || !result.response) {
+                    return;
+                }
+                addAddonSubtitles(result.response->subtitles, addonName);
+            });
+        }
+    });
+}
+
+void MainWindow::selectAddonSubtitle(int index)
+{
+    if (index < 0 || index >= addonSubtitles_.size()) {
+        return;
+    }
+    const AddonSubtitle &item = addonSubtitles_[index];
+    const QString label = QStringLiteral("%1 · %2").arg(stremio::languageName(item.subtitle.lang), item.addonName);
+    addonSubtitleLabels_.insert(item.subtitle.url, label);
+    setMpvPropertyFlag("sub-visibility", true);
+    // Loaded through mpv like any external subtitle; downloaded once
+    // (stremio-bugs#2292: slow generated subtitles must not be re-requested).
+    command({"sub-add", item.subtitle.url, "select", item.subtitle.label.value_or(label), item.subtitle.lang});
+    QTimer::singleShot(400, this, &MainWindow::refreshTracks);
 }
 
 void MainWindow::togglePause()
@@ -2184,7 +2394,11 @@ void MainWindow::syncChromeSettings()
     for (int i = 0; i < audioTrack_->count(); ++i) audio << audioTrack_->itemText(i);
 
     QStringList subtitles;
-    for (int i = 0; i < subtitleTrack_->count(); ++i) subtitles << subtitleTrack_->itemText(i);
+    QStringList subtitleGroups;
+    for (int i = 0; i < subtitleTrack_->count(); ++i) {
+        subtitles << subtitleTrack_->itemText(i);
+        subtitleGroups << subtitleTrack_->itemData(i, Qt::UserRole + 1).toString();
+    }
 
     QStringList interpolation;
     QList<bool> interpolationEnabled;
@@ -2199,7 +2413,7 @@ void MainWindow::syncChromeSettings()
     playerChrome_->setSettings(audio, qMax(0, audioTrack_->currentIndex()),
                                subtitles, qMax(0, subtitleTrack_->currentIndex()),
                                interpolation, interpolationEnabled,
-                               qMax(0, interpolationMode_->currentIndex()));
+                               qMax(0, interpolationMode_->currentIndex()), subtitleGroups);
 }
 
 QString MainWindow::formatTime(double seconds)

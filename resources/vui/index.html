@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050609" />
-  <title>LAMBDA Player — Discover</title>
+  <title>LAMBDA Player</title>
   <link rel="stylesheet" href="./home.css" />
+  <link rel="stylesheet" href="./addons.css" />
   <link rel="stylesheet" href="./window.css" />
 </head>
 <body>
@@ -15,21 +16,24 @@
 
   <header class="nav-shell" data-drag>
     <nav class="nav glass">
-      <a class="brand" href="#top" aria-label="Back to top" title="Back to top">
+      <a class="brand" href="#home" data-view-link="home" aria-label="Home" title="Home">
         <span class="brand-mark"><i></i><i></i></span>
         <span>LAMBDA</span>
       </a>
 
       <div class="nav-links" aria-label="Primary navigation">
-        <a class="active" href="#">Home</a>
-        <a href="#trending">Discover</a>
-        <a href="#collections">Collections</a>
-        <a href="#new">New</a>
+        <a class="active" href="#home" data-view-link="home">Home</a>
+        <a href="#discover" data-view-link="discover">Discover</a>
+        <a href="#addons" data-view-link="addons">Add-ons</a>
       </div>
 
       <div class="nav-actions">
-        <button class="round-button search-button" data-action="open" aria-label="Open video" title="Open a video (Ctrl+O)">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <form class="nav-search" role="search" autocomplete="off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input type="search" name="q" placeholder="Search add-ons" aria-label="Search your add-on catalogs" spellcheck="false" />
+        </form>
+        <button class="round-button" data-action="open" aria-label="Open video" title="Open a video from this PC (Ctrl+O)">
+          <svg viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v12.5H7z"/><path d="M13.5 3.5V8H18"/><path d="m11 11.5 3.5 2.3-3.5 2.3z"/></svg>
         </button>
         <button class="round-button" data-action="folder" aria-label="Open folder" title="Play a folder of videos">
           <svg viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.6l2 2.2H18a2.5 2.5 0 0 1 2.5 2.5v7.3A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z"/></svg>
@@ -43,7 +47,8 @@
     </nav>
   </header>
 
-  <main>
+  <!-- Home -->
+  <main class="view" data-view="home">
     <section class="hero" id="top">
       <div class="hero-art" aria-hidden="true">
         <div class="planet planet-main"></div>
@@ -53,41 +58,35 @@
         <div class="hero-beam beam-b"></div>
         <div class="star-field"></div>
       </div>
-
+      <div class="hero-backdrop" aria-hidden="true"></div>
       <div class="hero-vignette"></div>
 
       <div class="hero-content">
-        <div class="hero-kicker"><span></span> LAMBDA ORIGINAL</div>
-        <h1>Beyond the<br><em>Synthetic Horizon</em></h1>
-        <p>A signal from the edge of mapped space changes everything. Drift deeper into a world where memory, machine and light begin to merge.</p>
+        <div class="hero-kicker"><span></span> <b class="hero-kicker-text">LAMBDA PLAYER</b></div>
+        <h1 class="hero-title">Your films,<br><em>beautifully played</em></h1>
+        <img class="hero-logo" alt="" hidden />
+        <p class="hero-description">Play videos from this PC with libmpv and optional real-time RIFE frame interpolation. Add Stremio add-ons to browse catalogs and find sources.</p>
 
-        <div class="meta">
-          <span class="match">98% Match</span>
-          <span>2026</span>
-          <span class="rating">16+</span>
-          <span>1h 58m</span>
-          <span class="quality">4K</span>
-          <span class="quality">HDR</span>
-        </div>
+        <div class="meta hero-meta"></div>
 
         <div class="hero-actions">
-          <a class="primary-cta" href="./player.html" data-action="resume">
+          <a class="primary-cta" href="#" data-action="resume">
             <span class="play-glyph"></span>
-            <span class="primary-cta-label">Play</span>
+            <span class="primary-cta-label">Open video</span>
           </a>
-          <a class="secondary-cta glass" href="#featured">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v6m0-9v.2"/></svg>
-            More info
+          <a class="secondary-cta glass" href="#addons" data-hero-secondary>
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            <span class="secondary-cta-label">Add add-ons</span>
           </a>
         </div>
       </div>
 
-      <div class="hero-index glass" aria-label="Featured selection">
+      <div class="hero-index glass" aria-hidden="true" hidden>
         <span class="index-number">01</span>
         <div class="index-line"><i></i></div>
         <div>
-          <small>FEATURED</small>
-          <strong>SYNTHETIC HORIZON</strong>
+          <small class="hero-index-kicker">FEATURED</small>
+          <strong class="hero-index-title"></strong>
         </div>
       </div>
 
@@ -97,164 +96,180 @@
       </div>
     </section>
 
-    <section class="content-stage" id="featured">
+    <section class="content-stage" id="continue">
       <div class="section-head">
         <div>
-          <span class="eyebrow">RESUME YOUR JOURNEY</span>
+          <span class="eyebrow">ON THIS PC</span>
           <h2>Continue watching</h2>
         </div>
-        <a href="#trending">View all <span>↗</span></a>
       </div>
+      <div class="rail continue-rail"></div>
+    </section>
 
-      <div class="rail continue-rail">
-        <a class="wide-card theme-cyan" href="./player.html">
-          <div class="card-art"><span class="sphere"></span><span class="slash"></span></div>
-          <div class="card-shade"></div>
-          <span class="card-badge">S1 · E4</span>
-          <div class="wide-info">
-            <div><strong>Neon Fields</strong><span>31 min left</span></div>
-            <span class="mini-play"></span>
-          </div>
-          <div class="progress"><i style="width:68%"></i></div>
-        </a>
+    <div class="addon-rows"></div>
 
-        <a class="wide-card theme-violet" href="./player.html">
-          <div class="card-art"><span class="sphere"></span><span class="slash"></span></div>
-          <div class="card-shade"></div>
-          <span class="card-badge">S2 · E1</span>
-          <div class="wide-info">
-            <div><strong>Afterlight</strong><span>42 min left</span></div>
-            <span class="mini-play"></span>
+    <section class="content-stage addons-empty" hidden>
+      <div class="empty-card glass">
+        <div class="empty-icon" aria-hidden="true"><span class="brand-mark"><i></i><i></i></span></div>
+        <div class="empty-copy">
+          <span class="eyebrow">STREMIO ADD-ONS</span>
+          <h2>Bring catalogs, details and sources into LAMBDA</h2>
+          <p>LAMBDA Player works with Stremio add-ons. Install an add-on by its manifest URL, import your existing Stremio add-ons, or start with Stremio's official Cinemeta and OpenSubtitles add-ons.</p>
+          <div class="empty-actions">
+            <button type="button" class="pill-btn primary" data-install-defaults>Install Cinemeta + OpenSubtitles</button>
+            <a class="pill-btn" href="#addons" data-view-link="addons">Add an add-on URL</a>
           </div>
-          <div class="progress"><i style="width:44%"></i></div>
-        </a>
+        </div>
+      </div>
+    </section>
+  </main>
 
-        <a class="wide-card theme-blue" href="./player.html">
-          <div class="card-art"><span class="sphere"></span><span class="slash"></span></div>
-          <div class="card-shade"></div>
-          <span class="card-badge">FILM</span>
-          <div class="wide-info">
-            <div><strong>Signal Zero</strong><span>1h 12m left</span></div>
-            <span class="mini-play"></span>
+  <!-- Discover -->
+  <main class="view page-view" data-view="discover" hidden>
+    <section class="page-head">
+      <span class="eyebrow">DISCOVER</span>
+      <h1>Browse your add-ons</h1>
+    </section>
+    <section class="discover-filters">
+      <div class="chip-row discover-types" role="tablist" aria-label="Type"></div>
+      <div class="chip-row discover-catalogs" aria-label="Catalog"></div>
+      <div class="discover-extra"></div>
+    </section>
+    <section class="discover-grid meta-grid"></section>
+    <div class="grid-status discover-status"></div>
+    <div class="grid-sentinel discover-sentinel"></div>
+  </main>
+
+  <!-- Search -->
+  <main class="view page-view" data-view="search" hidden>
+    <section class="page-head">
+      <span class="eyebrow">SEARCH</span>
+      <h1 class="search-title">Search</h1>
+    </section>
+    <div class="search-rows"></div>
+    <div class="grid-status search-status"></div>
+  </main>
+
+  <!-- Details -->
+  <main class="view details-view" data-view="details" hidden>
+    <div class="details-backdrop" aria-hidden="true"></div>
+    <div class="details-shade" aria-hidden="true"></div>
+    <section class="details-body">
+      <button type="button" class="back-btn glass" data-back aria-label="Back" title="Back (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg><span>Back</span>
+      </button>
+      <div class="details-grid">
+        <div class="details-info">
+          <div class="details-poster" aria-hidden="true"></div>
+          <div class="details-text">
+            <span class="eyebrow details-kicker"></span>
+            <img class="details-logo" alt="" hidden />
+            <h1 class="details-title"></h1>
+            <div class="meta details-meta"></div>
+            <p class="details-description"></p>
+            <div class="details-genres"></div>
+            <div class="details-actions"></div>
+            <div class="details-state"></div>
           </div>
-          <div class="progress"><i style="width:29%"></i></div>
-        </a>
+        </div>
+        <aside class="details-side">
+          <div class="episodes-panel" hidden>
+            <div class="panel-head">
+              <strong>Episodes</strong>
+              <div class="season-select"></div>
+            </div>
+            <div class="episode-list"></div>
+          </div>
+          <div class="sources-panel glass" hidden>
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">SOURCES</span>
+                <strong class="sources-title">Streams</strong>
+              </div>
+              <button type="button" class="icon-btn sources-refresh" title="Ask the add-ons again" aria-label="Refresh sources">↻</button>
+            </div>
+            <div class="chip-row sources-filter"></div>
+            <div class="sources-list"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add-ons -->
+  <main class="view page-view" data-view="addons" hidden>
+    <section class="page-head">
+      <span class="eyebrow">STREMIO ADD-ONS</span>
+      <h1>Add-ons</h1>
+      <p class="page-lede">LAMBDA Player talks to Stremio add-ons exactly like Stremio does: catalogs, details, streams and subtitles come from the add-ons you install here, in this order.</p>
+    </section>
+
+    <section class="addon-install glass">
+      <form class="install-form" autocomplete="off">
+        <input type="text" name="url" placeholder="Paste an add-on URL (https://…/manifest.json or stremio://…)" spellcheck="false" aria-label="Add-on manifest URL" />
+        <button type="submit" class="pill-btn primary">Install</button>
+      </form>
+      <div class="install-actions">
+        <button type="button" class="pill-btn" data-install-defaults>Install Cinemeta + OpenSubtitles</button>
+        <button type="button" class="pill-btn" data-import-file>Import collection…</button>
+        <button type="button" class="pill-btn" data-import-paste>Paste collection</button>
+        <button type="button" class="pill-btn" data-export>Export</button>
+        <button type="button" class="pill-btn" data-refresh-all>Refresh all</button>
+      </div>
+      <div class="install-feedback" aria-live="polite"></div>
+      <div class="paste-box" hidden>
+        <textarea spellcheck="false" placeholder="Paste a Stremio add-on collection (JSON exported by Stremio, Debrify, LAMBDA…) or a list of manifest URLs, one per line."></textarea>
+        <div class="paste-actions">
+          <button type="button" class="pill-btn primary" data-import-text>Import</button>
+          <button type="button" class="pill-btn" data-import-cancel>Cancel</button>
+        </div>
       </div>
     </section>
 
-    <section class="content-stage" id="trending">
-      <div class="section-head">
+    <section class="server-card glass">
+      <div class="server-status">
+        <i class="status-dot"></i>
         <div>
-          <span class="eyebrow">WHAT EVERYONE IS WATCHING</span>
-          <h2>Trending now</h2>
+          <strong class="server-title">Stremio streaming server</strong>
+          <small class="server-detail">Needed for torrent, YouTube and archive streams. It comes with Stremio desktop and Stremio Service.</small>
         </div>
-        <div class="rail-controls" data-rail=".poster-rail"><button type="button" data-dir="-1" aria-label="Scroll left" title="Scroll left">←</button><button type="button" data-dir="1" aria-label="Scroll right" title="Scroll right">→</button></div>
       </div>
-
-      <div class="rail poster-rail">
-        <a class="poster-card poster-a" href="./player.html">
-          <span class="rank">01</span>
-          <div class="poster-visual"><i></i></div>
-          <div class="poster-overlay">
-            <span class="pill">SCI-FI</span>
-            <strong>Orbital</strong>
-            <small>2026 · 1h 46m</small>
-          </div>
-        </a>
-        <a class="poster-card poster-b" href="./player.html">
-          <span class="rank">02</span>
-          <div class="poster-visual"><i></i></div>
-          <div class="poster-overlay">
-            <span class="pill">THRILLER</span>
-            <strong>Vector</strong>
-            <small>2026 · 8 Episodes</small>
-          </div>
-        </a>
-        <a class="poster-card poster-c" href="./player.html">
-          <span class="rank">03</span>
-          <div class="poster-visual"><i></i></div>
-          <div class="poster-overlay">
-            <span class="pill">DRAMA</span>
-            <strong>Solace</strong>
-            <small>2025 · 2h 08m</small>
-          </div>
-        </a>
-        <a class="poster-card poster-d" href="./player.html">
-          <span class="rank">04</span>
-          <div class="poster-visual"><i></i></div>
-          <div class="poster-overlay">
-            <span class="pill">MYSTERY</span>
-            <strong>Ghost Signal</strong>
-            <small>2026 · 6 Episodes</small>
-          </div>
-        </a>
-        <a class="poster-card poster-e" href="./player.html">
-          <span class="rank">05</span>
-          <div class="poster-visual"><i></i></div>
-          <div class="poster-overlay">
-            <span class="pill">ACTION</span>
-            <strong>Velocity</strong>
-            <small>2025 · 1h 51m</small>
-          </div>
-        </a>
-      </div>
+      <form class="server-form" autocomplete="off">
+        <input type="text" name="server" spellcheck="false" aria-label="Streaming server URL" />
+        <button type="submit" class="pill-btn">Check</button>
+      </form>
     </section>
 
-    <section class="content-stage" id="collections">
+    <section class="content-stage installed-section">
       <div class="section-head">
         <div>
-          <span class="eyebrow">CURATED FOR LATE NIGHTS</span>
-          <h2>Worlds beyond</h2>
+          <span class="eyebrow">IN REQUEST ORDER</span>
+          <h2>Installed</h2>
         </div>
-        <a href="#new">Explore collection <span>↗</span></a>
       </div>
-
-      <div class="collection-grid">
-        <a class="collection-card collection-main" href="./player.html">
-          <div class="collection-art"></div>
-          <div class="collection-copy">
-            <span class="collection-no">V/01</span>
-            <h3>Dreams<br>of Europa</h3>
-            <p>12 films · Science fiction</p>
-            <span class="arrow-orb">↗</span>
-          </div>
-        </a>
-        <a class="collection-card collection-mini collection-two" href="./player.html">
-          <div class="collection-art"></div>
-          <div class="collection-copy"><span>V/02</span><h3>Electric<br>Memory</h3><p>8 films</p></div>
-        </a>
-        <a class="collection-card collection-mini collection-three" href="./player.html">
-          <div class="collection-art"></div>
-          <div class="collection-copy"><span>V/03</span><h3>Dark<br>Oceans</h3><p>10 films</p></div>
-        </a>
-      </div>
+      <div class="addon-list"></div>
     </section>
 
-    <section class="content-stage" id="new">
+    <section class="content-stage addon-catalogs-section" hidden>
       <div class="section-head">
         <div>
-          <span class="eyebrow">JUST ADDED TO VUI</span>
-          <h2>Fresh transmissions</h2>
+          <span class="eyebrow">FROM YOUR ADD-ONS</span>
+          <h2>Discover add-ons</h2>
         </div>
-        <div class="live-chip"><i></i> UPDATED NOW</div>
+        <div class="chip-row addon-catalog-tabs"></div>
       </div>
-
-      <div class="rail landscape-rail">
-        <a class="landscape-card land-a" href="./player.html"><div class="land-art"></div><div class="land-copy"><span>FILM · 2026</span><strong>Continuum</strong></div></a>
-        <a class="landscape-card land-b" href="./player.html"><div class="land-art"></div><div class="land-copy"><span>SERIES · 2026</span><strong>Glass City</strong></div></a>
-        <a class="landscape-card land-c" href="./player.html"><div class="land-art"></div><div class="land-copy"><span>FILM · 2025</span><strong>Still Light</strong></div></a>
-        <a class="landscape-card land-d" href="./player.html"><div class="land-art"></div><div class="land-copy"><span>SERIES · 2026</span><strong>The Divide</strong></div></a>
-      </div>
+      <div class="addon-catalog-list"></div>
     </section>
   </main>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <script src="./window.js"></script>
+  <script src="./stremio.js"></script>
   <script src="./home.js"></script>
 
   <footer>
     <div class="footer-brand"><span class="brand-mark"><i></i><i></i></span><strong>LAMBDA</strong></div>
-    <p>LAMBDA Player · local media</p>
+    <p>LAMBDA Player · local media and Stremio add-ons</p>
     <span>© 2026 LAMBDA Player</span>
   </footer>
 </body>

@@ -69,12 +69,10 @@
     if (window.LambdaWindow) window.LambdaWindow.refresh();
   }
 
+  // The hero is shared with the add-on views (stremio.js), which feature an
+  // add-on title when catalogs are installed and the local session otherwise.
   function renderHeroCta() {
-    const label = q('.primary-cta-label');
-    if (label) label.textContent = session.available ? 'Resume' : (recents.length ? 'Play recent' : 'Open video');
-    const cta = q('.primary-cta');
-    if (cta) cta.title = session.available ? 'Resume ' + (session.name || 'current video')
-      : recents.length ? 'Play ' + recents[0].name : 'Open a video from this PC';
+    if (window.lambdaStremio) window.lambdaStremio.setLocalState(session, recents);
   }
 
   // ---- About popover --------------------------------------------------------
@@ -114,37 +112,14 @@
       if (action === 'open') call('openVideo');
       else if (action === 'folder') call('openFolder');
       else if (action === 'resume') call('resume');
+      else if (action === 'addons-view' && window.lambdaStremio) window.lambdaStremio.show('addons');
       else if (action === 'about') aboutOpen() ? closeAbout() : openAbout();
     }));
 
-    // Catalogue tiles are a visual showcase: they open the local file picker.
-    document.addEventListener('click', e => {
-      const link = e.target.closest('a[href="./player.html"]');
-      if (link && !link.dataset.action) { e.preventDefault(); call('openVideo'); }
-    });
-
-    const brand = q('.brand');
-    if (brand) brand.addEventListener('click', e => { e.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); });
-
-    // Nav links scroll smoothly; the active link follows the section in view.
-    const links = qa('.nav-links a');
-    links.forEach(a => a.addEventListener('click', e => {
-      const id = (a.getAttribute('href') || '#').slice(1);
-      e.preventDefault();
-      if (!id) window.scrollTo({top: 0, behavior: 'smooth'});
-      else { const target = document.getElementById(id); if (target) window.scrollTo({top: target.getBoundingClientRect().top + window.scrollY - 96, behavior: 'smooth'}); }
-    }));
-    const sections = [{id: '', el: q('.hero')}].concat(links.slice(1).map(a => ({id: a.getAttribute('href').slice(1), el: document.getElementById(a.getAttribute('href').slice(1))})));
-    const updateActive = () => {
-      const probe = window.innerHeight * 0.38;
-      let active = 0;
-      sections.forEach((s, i) => { if (s.el && s.el.getBoundingClientRect().top <= probe) active = i; });
-      if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) active = sections.length - 1;
-      links.forEach((a, i) => a.classList.toggle('active', i === active));
-      q('.nav-shell').classList.toggle('scrolled', window.scrollY > 24);
-    };
-    window.addEventListener('scroll', updateActive, {passive: true});
-    updateActive();
+    // Nav shell gets a stronger glass once the page scrolls.
+    const updateNav = () => q('.nav-shell').classList.toggle('scrolled', window.scrollY > 24);
+    window.addEventListener('scroll', updateNav, {passive: true});
+    updateNav();
 
     // Rail arrow buttons scroll their rail by most of a page.
     qa('.rail-controls').forEach(group => {
@@ -224,6 +199,7 @@
     new QWebChannel(qt.webChannelTransport, channel => {
       home = channel.objects.homeBridge;
       if (window.LambdaWindow && channel.objects.windowBridge) window.LambdaWindow.attach(channel.objects.windowBridge);
+      if (window.lambdaStremio && channel.objects.stremio) window.lambdaStremio.attach(channel.objects.stremio, home);
       call('ready');
     });
   };

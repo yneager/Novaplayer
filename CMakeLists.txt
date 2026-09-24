@@ -85,6 +85,8 @@ target_link_libraries(LambdaPlayer PRIVATE lambda_stremio Qt6::Widgets Qt6::Open
 set(VUI_RESOURCE_FILES
   resources/vui/index.html
   resources/vui/home.css
+  resources/vui/addons.css
+  resources/vui/stremio.js
   resources/vui/player.html
   resources/vui/styles.css
   resources/vui/player.js

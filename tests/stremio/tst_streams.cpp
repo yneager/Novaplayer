@@ -438,7 +438,9 @@ void StreamsTest::boardSearchAndNextPage()
     QVERIFY(!service.nextPage(service.board()[1].request, 100)); // no "skip" declared
 
     const QJsonObject discover = service.discover(std::nullopt, {});
-    QCOMPARE(discover.value("types").toArray(), QJsonArray({"movie"}));
+    QCOMPARE(discover.value("types").toArray().size(), 1);
+    QCOMPARE(discover.value("types").toArray()[0].toObject().value("type").toString(), QString("movie"));
+    QVERIFY(discover.value("types").toArray()[0].toObject().value("selected").toBool());
     QCOMPARE(discover.value("catalogs").toArray().size(), 2);
 }
 

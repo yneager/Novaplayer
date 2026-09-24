@@ -615,6 +615,12 @@ void MainWindow::initMpv()
     mpv_set_option_string(mpv_, "watch-later-options", "start,aid,sid");
     mpv_set_option_string(mpv_, "resume-playback", "yes");
 
+    // Developer aid: LAMBDA_MPV_LOG=<file> writes mpv's own log.
+    const QByteArray mpvLog = qgetenv("LAMBDA_MPV_LOG");
+    if (!mpvLog.isEmpty()) {
+        mpv_set_option_string(mpv_, "log-file", mpvLog.constData());
+    }
+
     if (mpv_initialize(mpv_) < 0) {
         throw std::runtime_error("Could not initialize libmpv.");
     }
@@ -1723,6 +1729,9 @@ void MainWindow::openPath(const QString &path)
 
     // The OpenGL renderer is created when the player page is first shown;
     // mpv's libmpv VO needs it before video starts, so defer the first load.
+    // showHome() pauses mpv and the pause flag survives loadfile: a newly
+    // opened video starts playing (as Stremio's ShellVideo does).
+    setMpvPropertyFlag("pause", false);
     if (video_ && video_->isRenderReady()) {
         command({"loadfile", currentPath_, "replace"});
     } else {
@@ -1760,7 +1769,8 @@ void MainWindow::openStream(const AddonPlayback &playback)
 
     // Subtitles embedded in the stream object (SDK stream.subtitles) are
     // offered right away; subtitle addons are asked once the file is loaded.
-    addAddonSubtitles(playback.stream.subtitles, playback.addonName);
+    addAddonSubtitles(playback.stream.subtitles,
+                      playback.addonName.isEmpty() ? QStringLiteral("Stream") : playback.addonName + QStringLiteral(" · stream"));
 
     const QString title = currentMediaTitle();
     showPlayer(false);
@@ -1778,6 +1788,9 @@ void MainWindow::openStream(const AddonPlayback &playback)
     centerText_->setText(title);
     centerState_->hide();
 
+    // showHome() pauses mpv and the pause flag survives loadfile: a newly
+    // opened video starts playing (as Stremio's ShellVideo does).
+    setMpvPropertyFlag("pause", false);
     if (video_ && video_->isRenderReady()) {
         command({"loadfile", currentPath_, "replace"});
     } else {

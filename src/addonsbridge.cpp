@@ -101,12 +101,25 @@ void AddonsBridge::install(const QString &input, const QString &requestId)
 
 void AddonsBridge::installDefaults(const QString &requestId)
 {
-    const QStringList urls = StremioBackend::defaultAddonUrls();
-    auto remaining = std::make_shared<int>(int(urls.size()));
+    // One after the other, so they keep Stremio's default order
+    // (Cinemeta first, then OpenSubtitles v3).
+    auto urls = std::make_shared<QStringList>(StremioBackend::defaultAddonUrls());
     auto summary = std::make_shared<InstallOutcome>();
     summary->status = InstallOutcome::Status::CollectionImported;
-    for (const QString &url : urls) {
-        backend_->addons()->install(url, [this, requestId, remaining, summary](const InstallOutcome &outcome) {
+    auto next = std::make_shared<std::function<void()>>();
+    *next = [this, requestId, urls, summary, next] {
+        if (urls->isEmpty()) {
+            if (summary->imported + summary->skipped == 0) {
+                summary->status = InstallOutcome::Status::Failed;
+            } else {
+                summary->message = QStringLiteral("Installed Cinemeta and OpenSubtitles v3.");
+            }
+            emit installResult(requestId, outcomeJson(*summary));
+            *next = nullptr; // break the self-reference
+            return;
+        }
+        const QString url = urls->takeFirst();
+        backend_->addons()->install(url, [summary, next](const InstallOutcome &outcome) {
             if (outcome.status == InstallOutcome::Status::Installed || outcome.status == InstallOutcome::Status::Updated) {
                 ++summary->imported;
             } else if (outcome.status == InstallOutcome::Status::AlreadyInstalled) {
@@ -115,16 +128,12 @@ void AddonsBridge::installDefaults(const QString &requestId)
                 ++summary->failed;
                 summary->message = outcome.message;
             }
-            if (--(*remaining) == 0) {
-                if (summary->imported + summary->skipped == 0) {
-                    summary->status = InstallOutcome::Status::Failed;
-                } else {
-                    summary->message = QStringLiteral("Installed Cinemeta and OpenSubtitles v3.");
-                }
-                emit installResult(requestId, outcomeJson(*summary));
+            if (*next) {
+                (*next)();
             }
         });
-    }
+    };
+    (*next)();
 }
 
 void AddonsBridge::importCollectionText(const QString &text, const QString &requestId)

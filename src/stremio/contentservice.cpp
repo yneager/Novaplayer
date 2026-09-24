@@ -140,6 +140,22 @@ QJsonObject ContentService::discover(const std::optional<ResourceRequest> &selec
                              && selected->path.resource == catalog.request.path.resource},
         });
     }
+    // SelectableType.request: the first selectable catalog of each type
+    // (catalog_with_filters.rs unique_by type keeps the first request).
+    QJsonArray types;
+    const QList<SelectableCatalog> all = selectableCatalogs(addons);
+    for (const QString &type : selectable.types) {
+        for (const SelectableCatalog &catalog : all) {
+            if (catalog.request.path.type == type) {
+                types.append(QJsonObject{
+                    {"type", type},
+                    {"request", catalog.request.toJson()},
+                    {"selected", selected && selected->path.type == type},
+                });
+                break;
+            }
+        }
+    }
     QJsonArray extra;
     for (const SelectableExtra &item : selectable.extra) {
         QJsonArray options;
@@ -153,7 +169,7 @@ QJsonObject ContentService::discover(const std::optional<ResourceRequest> &selec
         extra.append(QJsonObject{{"name", item.name}, {"isRequired", item.isRequired}, {"options", options}});
     }
     return {
-        {"types", QJsonArray::fromStringList(selectable.types)},
+        {"types", types},
         {"selected", selected ? QJsonValue(selected->toJson()) : QJsonValue(QJsonValue::Null)},
         {"catalogs", catalogs},
         {"extra", extra},

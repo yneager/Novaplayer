@@ -173,7 +173,10 @@ void VideoParamsFetcher::computeHash(const QString &mediaUrl, const QList<QPair<
     // download the whole video.
     auto abortUnlessPartial = [](QNetworkReply *reply) {
         connect(reply, &QNetworkReply::metaDataChanged, reply, [reply] {
-            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 206) {
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            // Redirects (CDNs, debrid links) are followed; only a final
+            // non-ranged answer is aborted.
+            if (status != 206 && (status < 300 || status >= 400)) {
                 reply->abort();
             }
         });

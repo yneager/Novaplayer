@@ -17,7 +17,11 @@ QSettings appSettings()
 StremioBackend::StremioBackend(QObject *parent)
     : QObject(parent)
 {
-    const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    // Developer aid: LAMBDA_DATA_DIR keeps test runs out of the real profile.
+    const QString overrideDir = qEnvironmentVariable("LAMBDA_DATA_DIR");
+    const QString dataDir = overrideDir.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        : overrideDir;
     QDir().mkpath(dataDir);
 
     client_ = new stremio::AddonClient(this);

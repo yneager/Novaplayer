@@ -88,6 +88,11 @@ jobs:
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMPV_INCLUDE_DIR="$env:MPV_INCLUDE_ROOT" -DMPV_LIBRARY="$env:MPV_LIB"
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Test (Stremio addon protocol)
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:QT_ROOT_DIR\bin;$env:PATH"
+          ctest --test-dir build -C Release --output-on-failure
       - name: Package
         shell: pwsh
         run: |

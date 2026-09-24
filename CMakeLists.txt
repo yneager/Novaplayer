@@ -5,7 +5,32 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets Quick WebEngineWidgets WebChannel)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Widgets OpenGLWidgets Quick WebEngineWidgets WebChannel)
+
+# Stremio addon protocol client (no GUI dependencies; shared with the tests).
+qt_add_library(lambda_stremio STATIC
+  src/stremio/addonurl.cpp
+  src/stremio/addonurl.h
+  src/stremio/capabilities.cpp
+  src/stremio/capabilities.h
+  src/stremio/common.cpp
+  src/stremio/common.h
+  src/stremio/json.cpp
+  src/stremio/json.h
+  src/stremio/legacytransport.cpp
+  src/stremio/legacytransport.h
+  src/stremio/manifest.cpp
+  src/stremio/manifest.h
+  src/stremio/resources.cpp
+  src/stremio/resources.h
+  src/stremio/transport.cpp
+  src/stremio/transport.h
+)
+target_include_directories(lambda_stremio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(lambda_stremio PUBLIC Qt6::Core Qt6::Network)
+if(MSVC)
+  target_compile_options(lambda_stremio PRIVATE /utf-8)
+endif()
 
 set(MPV_ROOT "" CACHE PATH "Path to libmpv development package")
 if(NOT MPV_INCLUDE_DIR)
@@ -35,7 +60,7 @@ qt_add_executable(LambdaPlayer WIN32
 )
 
 target_include_directories(LambdaPlayer PRIVATE "${MPV_INCLUDE_DIR}")
-target_link_libraries(LambdaPlayer PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Quick Qt6::WebEngineWidgets Qt6::WebChannel "${MPV_LIBRARY}")
+target_link_libraries(LambdaPlayer PRIVATE lambda_stremio Qt6::Widgets Qt6::OpenGLWidgets Qt6::Quick Qt6::WebEngineWidgets Qt6::WebChannel "${MPV_LIBRARY}")
 
 set(VUI_RESOURCE_FILES
   resources/vui/index.html
@@ -71,3 +96,25 @@ if(MSVC)
 endif()
 
 set_target_properties(LambdaPlayer PROPERTIES OUTPUT_NAME "LambdaPlayer")
+
+option(LAMBDA_BUILD_TESTS "Build the Stremio addon protocol tests" ON)
+if(LAMBDA_BUILD_TESTS)
+  enable_testing()
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+  set(LAMBDA_TESTS
+    addonurl
+    capabilities
+    manifest
+    resources
+    transport
+  )
+  foreach(test_name IN LISTS LAMBDA_TESTS)
+    qt_add_executable(tst_${test_name} tests/stremio/tst_${test_name}.cpp tests/stremio/testutil.h)
+    target_include_directories(tst_${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/stremio")
+    target_link_libraries(tst_${test_name} PRIVATE lambda_stremio Qt6::Test)
+    if(MSVC)
+      target_compile_options(tst_${test_name} PRIVATE /utf-8)
+    endif()
+    add_test(NAME ${test_name} COMMAND tst_${test_name})
+  endforeach()
+endif()

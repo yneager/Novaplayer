@@ -40,6 +40,7 @@ private slots:
     void videoParamsComputedLocally();
     void videoParamsFromServer();
     void videoParamsNoRangeSupport();
+    void videoParamsFollowRedirects();
     void subtitlePlanExtras();
     void boardSearchAndNextPage();
     void episodeStreamUsesVideoId();
@@ -377,6 +378,30 @@ void StreamsTest::videoParamsNoRangeSupport()
     const VideoParams p = params(fetcher, stream(R"({"url":"https://placeholder/x"})"), source);
     QVERIFY(!p.hash);
     QCOMPARE(*p.filename, QString("v.mkv"));
+}
+
+void StreamsTest::videoParamsFollowRedirects()
+{
+    // CDNs and debrid links redirect before the ranged answer (archive.org
+    // does twice); the redirect must not abort the hash requests.
+    MockAddonServer mock;
+    MockAddonServer::Route redirect;
+    redirect.status = 302;
+    redirect.headers.emplaceBack("Location", "/real/video.mkv");
+    mock.route("/v/video.mkv", redirect);
+    MockAddonServer::Route file;
+    file.file = testFile(200000);
+    mock.route("/real/video.mkv", file);
+    QNetworkAccessManager network;
+    StreamingServer server(&network);
+    server.setUrl("http://127.0.0.1:1/");
+    VideoParamsFetcher fetcher(&network, &server);
+    PlaybackSource source;
+    source.url = mock.base() + "/v/video.mkv";
+    const VideoParams p = params(fetcher, stream(R"({"url":"https://placeholder/x"})"), source);
+    QVERIFY(p.hash);
+    QCOMPARE(*p.hash, QString("022042608122af40"));
+    QCOMPARE(*p.size, 200000);
 }
 
 void StreamsTest::subtitlePlanExtras()

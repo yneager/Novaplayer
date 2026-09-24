@@ -1,10 +1,22 @@
 # LAMBDA Player
 
-**Current version: v0.2.4**
+**Current version: v0.3.0**
 
-LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter.
+LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter. It is also a Stremio add-on client: installed Stremio add-ons provide catalogs, details, streams and subtitles, and their streams play in the same libmpv player.
 
 ## Version History
+
+### v0.3.0 — Stremio add-ons
+
+- **Add-ons page:** install Stremio add-ons by URL (`https://…/manifest.json`, configured URLs with tokens, `stremio://` links, legacy `/stremio/v1` add-ons), import an existing Stremio add-on collection or a list of URLs, export, enable/disable, reorder (buttons or drag and drop), refresh, configure and remove. Browse the add-on lists that installed add-ons publish (Cinemeta's Official and Community lists). The empty state offers Stremio's official Cinemeta and OpenSubtitles v3.
+- **Home:** real catalog rows from your add-ons (the decorative placeholder titles are gone) and a featured title; Continue watching for local files stays.
+- **Discover:** types, catalogs and filters (genre, year…) declared by the add-ons, with endless paging.
+- **Search:** asks every catalog that declares search support; results arrive per add-on.
+- **Details:** metadata, seasons and episodes, and a source picker grouped by add-on.
+- **Playback:** add-on streams play in the existing libmpv player (RIFE included). Stream request headers are applied; torrent, magnet, YouTube and archive streams need the Stremio streaming server (Stremio desktop or Stremio Service) running on this PC.
+- **Subtitles:** subtitle add-ons are asked with the video's file name, size and OpenSubtitles hash; their subtitles and the stream's own subtitles appear with the embedded and external tracks in the subtitle menu, grouped by source.
+- **Fixed:** a video opened after returning Home could stay paused while the controls showed it playing.
+- LAMBDA follows Stremio's own code for every protocol decision; see [docs/stremio/SOURCE_MAP.md](docs/stremio/SOURCE_MAP.md) and [docs/stremio/COMPATIBILITY.md](docs/stremio/COMPATIBILITY.md).
 
 ### v0.2.4 — Animated wheel scrolling
 
@@ -146,6 +158,21 @@ No local Qt, Visual Studio, CMake, libmpv, Python or VapourSynth installation is
 - Hardware decoding through mpv (`hwdec=auto-safe`)
 - Keyboard: Space, Left/Right, M, F, Esc
 - Real-time RIFE interpolation: original frame rate, doubled frame rate, or 60 fps
+- Stremio add-on client: catalogs, search, details, seasons/episodes, streams and subtitles from installed add-ons
+
+## Stremio Add-ons
+
+Open **Add-ons** and paste an add-on's manifest URL (for configurable add-ons, use **Configure** or paste the configured URL the add-on's page gives you). Add-ons are asked in the order shown there, exactly as Stremio does: catalogs fill Home and Discover, details come from the first add-on that answers, every add-on that supports the title is asked for streams, and subtitle add-ons are asked once a stream plays.
+
+What plays:
+
+| Stream kind | How LAMBDA plays it |
+|---|---|
+| Direct `https://` links (incl. debrid links) | libmpv directly, with the add-on's request headers |
+| Torrent / magnet, YouTube, RAR/ZIP/7z/TAR, NZB, FTP | through the Stremio streaming server at `http://127.0.0.1:11470` (Stremio desktop or Stremio Service must be running; the URL can be changed on the Add-ons page) |
+| External / web-player links | opened in your browser |
+
+LAMBDA does not include a torrent engine. Add-on configuration pages open in a separate window that cannot access LAMBDA; pressing the page's Install button installs the configured add-on.
 
 ## Frame Interpolation (RIFE)
 
@@ -175,3 +202,5 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the `licenses/` directo
 
 - [HANDOFF.md](HANDOFF.md) — current state, verification status and instructions for the next developer/AI agent.
 - [CHANGELOG.md](CHANGELOG.md) — detailed chronological development history.
+- [docs/stremio/SOURCE_MAP.md](docs/stremio/SOURCE_MAP.md) — which Stremio / client source each add-on feature is based on.
+- [docs/stremio/COMPATIBILITY.md](docs/stremio/COMPATIBILITY.md) — add-on compatibility decisions and findings.

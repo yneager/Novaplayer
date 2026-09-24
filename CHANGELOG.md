@@ -4,6 +4,7 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
+- **v0.3.0** — Stremio add-on client: install/configure/import add-ons, Home/Discover/Search/Details from add-on catalogs and metadata, source picker, add-on streams in the libmpv player, subtitle add-ons in the subtitle menu.
 - **v0.2.4** — animated mouse-wheel scrolling on the Home page (eased instead of jumping per notch).
 - **v0.2.3** — smoother scrolling (GPU rasterization enabled for the Vui WebEngine pages).
 - **v0.2.2** — video visible again (libmpv render API under the Vui web chrome, lost-wakeup fix), frameless rounded window with custom controls, mini player, recent files/resume, polished and fully functional UI.
@@ -12,6 +13,34 @@ This file records notable completed work visible in the repository history.
 - **v0.1.0** — base-player milestone: libmpv playback, controls, fullscreen overlay, audio/subtitle selection, external subtitles and MKV seek/subtitle fixes.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
+
+## 2026-09-24 — v0.3.0 Stremio add-on client
+
+### Added
+- `lambda_stremio` library (`src/stremio/`), ported from stremio-core (`development` @ 88be65b) and checked against stremio-web, stremio-video, the add-on SDK docs, stremio-addon-client, Debrify, Nuvio, Raffi and Cove (see `docs/stremio/SOURCE_MAP.md`):
+  - manifest/descriptor parsing incl. short/full resources, full and legacy catalog extras, `UniqueVec` catalogs, `skip` normalisation, optional `idPrefixes`;
+  - capability matching (`is_resource_supported`, `is_extra_supported`, `AggrRequest::plan`) and the Discover selection rules;
+  - HTTP transport URL building (encodeURIComponent set, `&`-joined extras, configured paths and query tokens kept byte-for-byte) and the legacy `/stremio/v1` JSON-RPC transport;
+  - response parsing (exactly one key, `null` → empty, invalid items skipped individually, all stream source forms);
+  - `AddonClient` (Qt networking, 200/201 only, redirects followed, 15 s per request, HTTP disk cache + short in-memory cache, never caching failures, cancellation);
+  - `AddonManager` (install from manifest/configured/`stremio://`/legacy URLs, `X-Stremio-Addon` detection, collections, identity by transport URL, update in place, `configurationRequired` refusal, enable/disable, reorder, refresh, import/export, persistence in `addons.json`);
+  - `StreamResolver` + `StreamingServer` (direct URLs to mpv with `proxyHeaders` as mpv `http-header-fields`; torrent/magnet/YouTube/archives/NZB/FTP through the Stremio streaming server exactly like stremio-video; external/web-player links opened in the browser);
+  - `VideoParamsFetcher` (subtitle `videoHash`/`videoSize`/`filename` like stremio-video, with a local OpenSubtitles hash over HTTP ranges when the streaming server is not running) and an lz-string port for server payloads;
+  - `ContentService` (Board, Search, next page, Discover, meta/stream/subtitle planning).
+- `StremioBackend`, `AddonsBridge` (QWebChannel "stremio" object for the Home page) and `AddonConfigureWindow` (add-on configuration pages in an isolated off-the-record WebEngine profile; install links become installs).
+- Vui views in the Home page (`resources/vui/stremio.js`, `addons.css`): Home catalog rows and featured hero, Discover, Search, Details with seasons/episodes and a per-add-on source picker, Add-ons management and add-on discovery. The decorative placeholder sections of the Home page were removed; with no add-ons installed an empty state offers Stremio's official Cinemeta and OpenSubtitles v3.
+- `MainWindow::openStream`: add-on streams use the same libmpv pipeline as local files (RIFE, tracks, fullscreen, keys). Subtitle add-ons are asked after the file loads; their subtitles and `stream.subtitles` are listed in the existing subtitle menu (grouped Embedded / External / Add-ons) and loaded with mpv `sub-add` only when chosen.
+- 8 Qt Test suites (`tests/stremio/`) with a local mock add-on server; CI runs them.
+- Developer aids: `LAMBDA_DATA_DIR` (separate add-on profile) and `LAMBDA_MPV_LOG` (mpv log file).
+
+### Fixed
+- A video opened after returning Home stayed paused while the controls showed it playing (`pause` survives `loadfile`; present since v0.2.2).
+
+### Verification
+- Unit tests: 8 suites pass locally (MSVC 14.51, Qt 6.8.3), including stremio-core's own URL vectors, Debrify's configured-URL cases and lz-string's test data.
+- Runtime, in `LambdaPlayer.exe` with a separate test profile: installed Cinemeta, OpenSubtitles v3, Public Domain Movies, WatchHub (from Cinemeta's addon catalog), the legacy OpenSubtitles add-on and a local test add-on; Home rows, featured hero, Discover (types, catalogs, required `genre`, paging), Search, movie and series Details, episode streams with canonical ids, direct playback, `proxyHeaders` playback, subtitle add-on requests with the correct extras (hash verified independently), add-on subtitles loaded through mpv, configure-page install and persistence across restarts.
+- Local playback re-checked after the change: local file, embedded/external subtitles, RIFE Original → double → 60 fps → Original (only `@novarife` added/removed).
+- Not runtime-tested: torrent/YouTube/archive playback through the Stremio streaming server (not installed on the test PC; covered by mock-server tests).
 
 ## 2026-09-24 — v0.2.4 animated wheel scrolling
 

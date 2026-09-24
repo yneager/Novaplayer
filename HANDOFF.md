@@ -1,18 +1,32 @@
 # AI Agent Handoff
 
 ## Last Updated
-- Date: 2026-09-23
-- Model/Agent: Claude (claude-fable-5-1 / claude-opus-5-5)
-- Branch: `main`
-- Previous code commit: `3314ef130cc42cbc3f86fbee60ab6efc9a64f05b` — `Fix MKV seeking and subtitle selection`
-- This commit: "Add optional RIFE 2× frame interpolation via mpv VapourSynth filter" (see `git log`; CI run number is reported in the session summary and should be recorded by the next agent after checking Actions)
+- Date: 2026-09-24
+- Model/Agent: Claude (claude-opus-5-5)
+- Branch: `main` (v0.3.0 work committed locally; push only when the owner asks)
+- CI: the Windows workflow now builds and runs the `tests/stremio` suites (`ctest`); it has not run for the v0.3.0 commits yet.
 
 ## Project Summary
-LAMBDA Player is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the window and controls; libmpv is embedded into a native Qt widget (`wid`) and does decoding, rendering, timing, audio and subtitles.
+LAMBDA Player is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the window; the Home and Player UIs are Vui HTML/CSS pages in Qt WebEngine. libmpv renders through its render API into `MpvVideoWidget` (a `QOpenGLWidget`, since v0.2.2) and does decoding, timing, audio and subtitles. Since v0.3.0 it is also a Stremio add-on client.
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `LAMBDA-Player-Windows-x64`).
 
-## Latest Change: v0.2.4 Animated Wheel Scrolling
+## Latest Change: v0.3.0 Stremio Add-on Client
+
+Read `docs/stremio/SOURCE_MAP.md` first: every protocol behaviour is a port of a named Stremio (or proven client) implementation. `docs/stremio/COMPATIBILITY.md` records every deviation and finding (C-001…C-018).
+
+Layers:
+- `src/stremio/` (`lambda_stremio`, no GUI): `manifest`, `resources`, `capabilities`, `transport`, `legacytransport`, `addonurl` (pure protocol), `addonclient` (network), `addonmanager` (installed add-ons, `addons.json`), `contentservice` (request planning + JSON for the UI), `streamresolver` (+ `StreamingServer`), `videoparams` (subtitle context), `lzstring`, `language`.
+- `src/stremiobackend.*` owns them; `src/addonsbridge.*` is the Home page's QWebChannel object `stremio`; `src/addonconfigurewindow.*` shows add-on configure pages in an off-the-record profile.
+- `resources/vui/stremio.js` + `addons.css`: Home rows/hero, Discover, Search, Details, Sources, Add-ons. `home.js` keeps local recents/About and hands the hero to `stremio.js`.
+- `MainWindow::openStream` plays resolved streams in the same libmpv pipeline; `fetchAddonSubtitles` asks subtitle add-ons after FILE_LOADED; add-on subtitles are combo entries with data `"addon:<n>"` loaded by `sub-add` on selection.
+
+Testing:
+- `build.ps1 -Test` (local) / CI `ctest`: 8 Qt Test suites with `tests/stremio/mockaddonserver.h`.
+- Runtime harness used for v0.3.0 (not committed, lives in `_local/tools`): `run-test.ps1` (isolated `LAMBDA_DATA_DIR`, `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9223`, `LAMBDA_DEBUG_GRAB`, `LAMBDA_MPV_LOG`), `cdp.ps1` (evaluate JS in `index.html`/`player.html`), `grab.ps1` (window capture) and `testaddon.py` (deterministic local add-on with catalogs, a series with canonical ids, direct/header-protected streams, inline and add-on subtitles, a configure page).
+- Not runtime-tested: playback through the Stremio streaming server (torrent/YouTube/archives) — no server on the test PC.
+
+## Previous Change: v0.2.4 Animated Wheel Scrolling
 
 `resources/vui/home.js` → `smoothWheel()` eases the Home page toward the accumulated wheel target.
 - Qt WebEngine forwards Windows wheel notches to Chromium as precise pixel deltas, so `QWebEngineSettings::ScrollAnimatorEnabled` (set in `homepage.cpp`) never animates them.
@@ -202,7 +216,11 @@ GPU selection: not set; the plugin uses `ncnn::get_default_gpu_index()`.
 ## Important Files
 - `src/interpolationcontroller.{h,cpp}` — RIFE glue (paths, file checks, `VSSCRIPT_PATH`, `vf add/remove @novarife`, failure detection).
 - `src/homepage.{h,cpp}` — native Vui homepage, generated artwork, home rails and local-file/session-resume actions.
-- `src/mainwindow.{h,cpp}` — application stack + native Vui player UI, playback controls, interpolation combo, mpv log-message forwarding and error dialog.
+- `src/mainwindow.{h,cpp}` — application stack + native Vui player UI, playback controls, interpolation combo, mpv log-message forwarding and error dialog; `openStream` / add-on subtitles.
+- `src/stremio/*`, `src/stremiobackend.*`, `src/addonsbridge.*`, `src/addonconfigurewindow.*` — Stremio add-on client (see the v0.3.0 section).
+- `resources/vui/stremio.js`, `resources/vui/addons.css` — add-on views in the Home page.
+- `tests/stremio/*` — protocol/client tests and the mock add-on server; `tests/stremio/data/lz-string` is binary test data (`.gitattributes` `-text`).
+- `docs/stremio/SOURCE_MAP.md`, `docs/stremio/COMPATIBILITY.md` — references and compatibility log.
 - `resources/rife/rife.vpy` — VapourSynth script (adapted from MIT `Lafourkad/mpv-RIFE`).
 - `.github/scripts/assemble-rife-runtime.ps1` — pinned, hash-verified runtime assembly.
 - `.github/workflows/windows-portable.yml` — build + package (pinned libmpv, MSVC runtime, RIFE runtime).
@@ -227,6 +245,11 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 - mpv event handling threading model is unchanged (wakeup → queued `processMpvEvents()`); log messages arrive through the same event loop.
 
 ## Do Not Break
+- Stremio protocol behaviour must stay traceable to `docs/stremio/SOURCE_MAP.md`; change it only with a source reference and a test, and log deviations in `COMPATIBILITY.md`.
+- Never re-encode or decode a transport URL: request URLs are built by string replacement of the `/manifest.json` path suffix (configured paths and query tokens depend on it).
+- Keep one result slot per planned add-on request; one failing/slow add-on must never block or clear another.
+- `http-header-fields` is set per add-on stream and cleared by `clearAddonSession()` for every other file; keep `pause=no` before `loadfile`.
+- Add-on configure pages must stay in their own off-the-record profile without a WebChannel.
 - Keep `Q_OBJECT` + `CMAKE_AUTOMOC` (both `MainWindow` and `InterpolationController` use `Q_OBJECT`).
 - Keep seek flags as one argument (`absolute+exact`).
 - Keep the Vui Home/Player page architecture and the native-widget setup. `video_` remains the libmpv target; player chrome and the transition curtain must stay compatible with the Windows video HWND.
@@ -238,6 +261,7 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 - Test mpv integration changes in-process against `libmpv-2.dll` (for example with a ctypes harness), not only with `mpv.exe` launched with a prepared environment.
 
 ## Next Recommended Tasks
+0. v0.3.0: after the owner allows pushing, confirm the CI run (build + `ctest` + package). Runtime-test streaming-server playback with Stremio Service running (torrent with/without `fileIdx`, magnet, YouTube). Possible follow-ups: next-episode/binge (bingeGroup), a Continue watching for add-on titles, trailers through the streaming server.
 1. Confirm the CI run for this commit passed; download the artifact and runtime-test in `LambdaPlayer.exe`: RIFE 2× on a 24 fps and a 30 fps file (use mpv stats / visual smoothness), seek (click, drag, arrows), pause, embedded + external subtitles, audio-track switch, mute/volume, fullscreen overlay, Off → normal playback.
 2. Test the failure path by renaming `rife\models` in the extracted artifact → selecting RIFE 2× should show an error and stay on Off.
 3. Test on NVIDIA and Intel GPUs and on 1080p/4K content; record performance.

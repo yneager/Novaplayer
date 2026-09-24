@@ -62,7 +62,7 @@ code from it was copied into LAMBDA Player.
 - License: SIL Open Font License 1.1
 - License copy: `licenses/Inter-LICENSE.txt`
 
-## Streaming engine (added in v0.3.0)
+## Streaming engine (added in v0.2.5)
 
 | Component | Version / commit | License | Files in package |
 |-----------|------------------|---------|------------------|

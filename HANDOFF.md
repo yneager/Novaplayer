@@ -3,15 +3,15 @@
 ## Last Updated
 - Date: 2026-09-24
 - Model/Agent: Claude (claude-opus-5-5)
-- Branch: `main` (v0.3.0 work committed locally; push only when the owner asks)
-- CI: the Windows workflow now builds and runs the `tests/stremio` suites (`ctest`); it has not run for the v0.3.0 commits yet.
+- Branch: `main` (v0.2.5 released)
+- CI: the Windows workflow now builds and runs the `tests/stremio` suites (`ctest`).
 
 ## Project Summary
-LAMBDA Player is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the window; the Home and Player UIs are Vui HTML/CSS pages in Qt WebEngine. libmpv renders through its render API into `MpvVideoWidget` (a `QOpenGLWidget`, since v0.2.2) and does decoding, timing, audio and subtitles. Since v0.3.0 it is also a Stremio add-on client.
+LAMBDA Player is a small Windows desktop video player implemented in C++20 with Qt 6 Widgets and libmpv. Qt owns the window; the Home and Player UIs are Vui HTML/CSS pages in Qt WebEngine. libmpv renders through its render API into `MpvVideoWidget` (a `QOpenGLWidget`, since v0.2.2) and does decoding, timing, audio and subtitles. Since v0.2.5 it is also a Stremio add-on client.
 
 The repository targets a portable Windows x64 build produced by the `Build Windows Portable` GitHub Actions workflow (artifact `LAMBDA-Player-Windows-x64`).
 
-## Latest Change: v0.3.0 Stremio Add-on Client
+## Latest Change: v0.2.5 Stremio Add-on Client
 
 Read `docs/stremio/SOURCE_MAP.md` first: every protocol behaviour is a port of a named Stremio (or proven client) implementation. `docs/stremio/COMPATIBILITY.md` records every deviation and finding (C-001…C-018).
 
@@ -23,7 +23,7 @@ Layers:
 
 Testing:
 - `build.ps1 -Test` (local) / CI `ctest`: 8 Qt Test suites with `tests/stremio/mockaddonserver.h`.
-- Runtime harness used for v0.3.0 (not committed, lives in `_local/tools`): `run-test.ps1` (isolated `LAMBDA_DATA_DIR`, `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9223`, `LAMBDA_DEBUG_GRAB`, `LAMBDA_MPV_LOG`), `cdp.ps1` (evaluate JS in `index.html`/`player.html`), `grab.ps1` (window capture) and `testaddon.py` (deterministic local add-on with catalogs, a series with canonical ids, direct/header-protected streams, inline and add-on subtitles, a configure page).
+- Runtime harness used for v0.2.5 (not committed, lives in `_local/tools`): `run-test.ps1` (isolated `LAMBDA_DATA_DIR`, `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9223`, `LAMBDA_DEBUG_GRAB`, `LAMBDA_MPV_LOG`), `cdp.ps1` (evaluate JS in `index.html`/`player.html`), `grab.ps1` (window capture) and `testaddon.py` (deterministic local add-on with catalogs, a series with canonical ids, direct/header-protected streams, inline and add-on subtitles, a configure page).
 - Built-in streaming engine: `tools/stream-server/` (pins in `versions.json`, host, triplet, patches, `build.ps1`); `src/stremio/serverprocess.*` runs it; `StremioBackend` owns cache location/size/clear. Local build: `_local/tools/build-streamserver.ps1` (Rust + vcpkg + libclang in `_local`), `_local/tools/enginetest.ps1` tests the exe directly.
 - YouTube is intentionally not played in LAMBDA (owner decision); YouTube streams open in the browser.
 
@@ -218,7 +218,7 @@ GPU selection: not set; the plugin uses `ncnn::get_default_gpu_index()`.
 - `src/interpolationcontroller.{h,cpp}` — RIFE glue (paths, file checks, `VSSCRIPT_PATH`, `vf add/remove @novarife`, failure detection).
 - `src/homepage.{h,cpp}` — native Vui homepage, generated artwork, home rails and local-file/session-resume actions.
 - `src/mainwindow.{h,cpp}` — application stack + native Vui player UI, playback controls, interpolation combo, mpv log-message forwarding and error dialog; `openStream` / add-on subtitles.
-- `src/stremio/*`, `src/stremiobackend.*`, `src/addonsbridge.*`, `src/addonconfigurewindow.*` — Stremio add-on client (see the v0.3.0 section).
+- `src/stremio/*`, `src/stremiobackend.*`, `src/addonsbridge.*`, `src/addonconfigurewindow.*` — Stremio add-on client (see the v0.2.5 section).
 - `resources/vui/stremio.js`, `resources/vui/addons.css` — add-on views in the Home page.
 - `tests/stremio/*` — protocol/client tests and the mock add-on server; `tests/stremio/data/lz-string` is binary test data (`.gitattributes` `-text`).
 - `docs/stremio/SOURCE_MAP.md`, `docs/stremio/COMPATIBILITY.md` — references and compatibility log.
@@ -262,7 +262,7 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 - Test mpv integration changes in-process against `libmpv-2.dll` (for example with a ctypes harness), not only with `mpv.exe` launched with a prepared environment.
 
 ## Next Recommended Tasks
-0. v0.3.0: after the owner allows pushing, confirm the CI run (the first `stream-server` job builds libtorrent/Boost/OpenSSL with vcpkg and takes long; later runs use the cache). Possible follow-ups: engine buffering/peer status in the player, next-episode/binge (bingeGroup), a Continue watching for add-on titles, trailers through the streaming server.
+0. v0.2.5: confirm the CI run (the first `stream-server` job builds libtorrent/Boost/OpenSSL with vcpkg and takes long; later runs use the cache). Possible follow-ups: engine buffering/peer status in the player, next-episode/binge (bingeGroup), a Continue watching for add-on titles, trailers through the streaming server.
 1. Confirm the CI run for this commit passed; download the artifact and runtime-test in `LambdaPlayer.exe`: RIFE 2× on a 24 fps and a 30 fps file (use mpv stats / visual smoothness), seek (click, drag, arrows), pause, embedded + external subtitles, audio-track switch, mute/volume, fullscreen overlay, Off → normal playback.
 2. Test the failure path by renaming `rife\models` in the extracted artifact → selecting RIFE 2× should show an error and stay on Off.
 3. Test on NVIDIA and Intel GPUs and on 1080p/4K content; record performance.

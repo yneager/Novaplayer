@@ -4,7 +4,7 @@ This file records notable completed work visible in the repository history.
 
 ## Version Map
 
-- **v0.3.0** — Stremio add-on client: install/configure/import add-ons, Home/Discover/Search/Details from add-on catalogs and metadata, source picker, add-on streams in the libmpv player, subtitle add-ons in the subtitle menu, built-in torrent/archive streaming engine.
+- **v0.2.5** — Stremio add-on client: install/configure/import add-ons, Home/Discover/Search/Details from add-on catalogs and metadata, source picker, add-on streams in the libmpv player, subtitle add-ons in the subtitle menu, built-in torrent/archive streaming engine.
 - **v0.2.4** — animated mouse-wheel scrolling on the Home page (eased instead of jumping per notch).
 - **v0.2.3** — smoother scrolling (GPU rasterization enabled for the Vui WebEngine pages).
 - **v0.2.2** — video visible again (libmpv render API under the Vui web chrome, lost-wakeup fix), frameless rounded window with custom controls, mini player, recent files/resume, polished and fully functional UI.
@@ -14,7 +14,7 @@ This file records notable completed work visible in the repository history.
 
 The README keeps the user-facing permanent version history. These chronological entries retain the more detailed implementation record.
 
-## 2026-09-24 — v0.3.0 built-in streaming engine
+## 2026-09-24 — v0.2.5 built-in streaming engine
 
 ### Added
 - `lambda-stream-server.exe`: the open-source Stremio-compatible streaming server stremio-native/stream-server (libtorrent backend, pinned commit `f585ab6`) with LAMBDA's host `tools/stream-server/lambda_stream_host.rs` (127.0.0.1 only, chosen port, ready line, exits when LAMBDA's stdin pipe closes; no tray, SSDP, HTTPS or self-update). Built by `tools/stream-server/build.ps1` (vcpkg libtorrent/OpenSSL, x86-64 baseline instead of upstream's AVX2) in a cached CI job and bundled in the portable package.
@@ -31,7 +31,7 @@ The README keeps the user-facing permanent version history. These chronological 
 - Unit tests: 8 suites pass (new: engine missing, ready line, torrent create errors, web-page links, YouTube links).
 - Runtime with real Torrentio results for Night of the Living Dead (1968, public domain): single-file torrent (metadata 14 s, playback started while downloading), seek forward to 60 % (6.3 s) and back to 20 % (0.07 s), a 75-file pack with `fileIdx` 4 (correct file), a torrent without `fileIdx` (main video chosen), a magnet with trackers, OpenSubtitles results during torrent playback with the hash verified independently and an add-on subtitle loaded; test add-on: ZIP archive stream, dead torrent (error after 46 s, another source can be chosen), Clear cache during torrent playback; local file playback unchanged, engine not started for local files.
 
-## 2026-09-24 — v0.3.0 Stremio add-on client
+## 2026-09-24 — v0.2.5 Stremio add-on client
 
 ### Added
 - `lambda_stremio` library (`src/stremio/`), ported from stremio-core (`development` @ 88be65b) and checked against stremio-web, stremio-video, the add-on SDK docs, stremio-addon-client, Debrify, Nuvio, Raffi and Cove (see `docs/stremio/SOURCE_MAP.md`):

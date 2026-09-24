@@ -1,12 +1,12 @@
 # LAMBDA Player
 
-**Current version: v0.3.0**
+**Current version: v0.2.5**
 
 LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with optional real-time RIFE frame interpolation through mpv's VapourSynth filter. It is also a Stremio add-on client: installed Stremio add-ons provide catalogs, details, streams and subtitles, and their streams play in the same libmpv player.
 
 ## Version History
 
-### v0.3.0 — Stremio add-ons
+### v0.2.5 — Stremio add-ons
 
 - **Add-ons page:** install Stremio add-ons by URL (`https://…/manifest.json`, configured URLs with tokens, `stremio://` links, legacy `/stremio/v1` add-ons), import an existing Stremio add-on collection or a list of URLs, export, enable/disable, reorder (buttons or drag and drop), refresh, configure and remove. Browse the add-on lists that installed add-ons publish (Cinemeta's Official and Community lists). The empty state offers Stremio's official Cinemeta and OpenSubtitles v3.
 - **Home:** real catalog rows from your add-ons (the decorative placeholder titles are gone) and a featured title; Continue watching for local files stays.

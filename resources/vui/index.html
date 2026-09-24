@@ -230,14 +230,32 @@
       <div class="server-status">
         <i class="status-dot"></i>
         <div>
-          <strong class="server-title">Stremio streaming server</strong>
-          <small class="server-detail">Needed for torrent, YouTube and archive streams. It comes with Stremio desktop and Stremio Service.</small>
+          <strong class="server-title">Streaming engine</strong>
+          <small class="server-detail">Plays torrent, magnet and archive streams. Built into LAMBDA; starts when needed.</small>
         </div>
       </div>
-      <form class="server-form" autocomplete="off">
-        <input type="text" name="server" spellcheck="false" aria-label="Streaming server URL" />
-        <button type="submit" class="pill-btn">Check</button>
-      </form>
+      <div class="cache-row">
+        <small class="cache-detail"></small>
+        <div class="cache-actions">
+          <select class="cache-size" aria-label="Cache size limit">
+            <option value="2147483648">2 GB</option>
+            <option value="5368709120">5 GB</option>
+            <option value="10737418240">10 GB</option>
+            <option value="21474836480">20 GB</option>
+            <option value="53687091200">50 GB</option>
+          </select>
+          <button type="button" class="pill-btn" data-cache-folder>Change folder</button>
+          <button type="button" class="pill-btn" data-cache-reset hidden>Default folder</button>
+          <button type="button" class="pill-btn" data-cache-clear>Clear cache</button>
+        </div>
+      </div>
+      <details class="server-external">
+        <summary>Use an external Stremio streaming server instead</summary>
+        <form class="server-form" autocomplete="off">
+          <input type="text" name="server" spellcheck="false" placeholder="http://127.0.0.1:11470/ (empty = built-in engine)" aria-label="External streaming server URL" />
+          <button type="submit" class="pill-btn">Apply</button>
+        </form>
+      </details>
     </section>
 
     <section class="content-stage installed-section">

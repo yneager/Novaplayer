@@ -163,7 +163,8 @@ main.view[hidden]{display:none!important}
 .stream-card{display:grid;grid-template-columns:minmax(78px,108px) minmax(0,1fr);gap:12px;width:100%;padding:11px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035);color:inherit;text-align:left;font:inherit;cursor:pointer;transition:.2s var(--ease);position:relative}
 .stream-card:hover{border-color:rgba(120,245,231,.32);background:rgba(120,245,231,.06);transform:translateX(2px)}
 .stream-card.busy{border-color:var(--cyan);pointer-events:none}
-.stream-card.busy::after{content:"Opening…";position:absolute;right:12px;top:10px;color:var(--cyan);font-size:9px;font-weight:700}
+.stream-card.busy::after{content:attr(data-status);position:absolute;right:12px;top:10px;max-width:60%;color:var(--cyan);font-size:9px;font-weight:700;text-align:right}
+.stream-card.busy:not([data-status])::after{content:"Opening…"}
 .stream-name{white-space:pre-line;font-size:10px;font-weight:700;line-height:1.35;color:#fff;word-break:break-word}
 .stream-body{min-width:0}
 .stream-desc{white-space:pre-line;font-size:9.5px;line-height:1.5;color:rgba(255,255,255,.62);word-break:break-word;max-height:7.5em;overflow:hidden}
@@ -198,6 +199,16 @@ main.view[hidden]{display:none!important}
 .status-dot{flex:0 0 9px;height:9px;border-radius:50%;background:#ffb36b;box-shadow:0 0 10px rgba(255,179,107,.6)}
 .server-card.online .status-dot{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
 .server-form{flex:0 1 380px}
+.server-card.problem .status-dot{background:#ffb86b;box-shadow:0 0 10px rgba(255,184,107,.7)}
+.cache-row{display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;flex-basis:100%}
+.cache-row[hidden]{display:none}
+.cache-detail{min-width:0;flex:1 1 260px;color:rgba(255,255,255,.5);font-size:9.5px;overflow-wrap:anywhere}
+.cache-actions{display:flex;gap:8px;flex-wrap:wrap}
+.cache-actions .pill-btn{height:32px}
+.cache-size{height:32px;padding:0 10px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(4,6,10,.55);color:#fff;font:inherit;font-size:10.5px;outline:0}
+.server-external{flex-basis:100%}
+.server-external summary{cursor:pointer;color:rgba(255,255,255,.45);font-size:9.5px;margin-bottom:8px}
+.server-external .server-form{max-width:520px}
 .server-form input{height:36px}
 .server-form .pill-btn{height:36px}
 .installed-section{padding-top:36px}

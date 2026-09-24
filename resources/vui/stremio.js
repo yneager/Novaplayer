@@ -805,7 +805,7 @@
 
   // ---- Sources --------------------------------------------------------------------------
   let sources = null;
-  const SERVER_KINDS = new Set(['torrent', 'magnet', 'youtube', 'rar', 'zip', '7zip', 'tgz', 'tar', 'nzb']);
+  const SERVER_KINDS = new Set(['torrent', 'magnet', 'rar', 'zip', '7zip', 'tgz', 'tar', 'nzb']);
   const KIND_LABELS = {url: 'Direct', magnet: 'Torrent', torrent: 'Torrent', youtube: 'YouTube', rar: 'RAR', zip: 'ZIP',
                        '7zip': '7-Zip', tgz: 'TGZ', tar: 'TAR', nzb: 'Usenet', external: 'External', playerFrame: 'Web player'};
 
@@ -862,8 +862,12 @@
     if (hints.filename) badges.appendChild(el('span', 'badge filename', hints.filename));
     if (stream.subtitles && stream.subtitles.length) badges.appendChild(el('span', 'badge', stream.subtitles.length + ' subtitle' + (stream.subtitles.length > 1 ? 's' : '')));
     const needsServer = streamNeedsServer(stream);
-    if (needsServer) badges.appendChild(el('span', 'badge ' + (state.server.available ? 'server-ok' : 'server-missing'),
-      state.server.available ? 'Streaming server' : 'Needs streaming server'));
+    if (needsServer) {
+      const server = state.server || {};
+      if (server.mode === 'external') badges.appendChild(el('span', 'badge ' + (server.available ? 'server-ok' : 'server-missing'),
+        server.available ? 'External server' : 'External server offline'));
+      else if (server.engineMissing) badges.appendChild(el('span', 'badge server-missing', 'Engine missing'));
+    }
     if (stream.kind === 'external' || stream.kind === 'playerFrame') badges.appendChild(el('span', 'badge', 'Opens in browser'));
     body.appendChild(badges);
     card.appendChild(body);
@@ -950,8 +954,11 @@
 
   function onPlayStatus(status) {
     const card = sources && sources.busyCard;
-    if (status.state === 'resolving') return;
-    if (card) card.classList.remove('busy');
+    if (status.state === 'resolving') {
+      if (card) card.dataset.status = status.message || 'Opening…';
+      return;
+    }
+    if (card) { card.classList.remove('busy'); delete card.dataset.status; }
     if (status.state === 'error') toast(status.message || 'This stream cannot be played.', true);
     else if (status.state === 'external') toast(status.message || 'Opened in your browser.');
   }
@@ -1156,13 +1163,38 @@
     const card = q('.server-card');
     if (!card) return;
     const server = state.server || {};
-    card.classList.toggle('online', !!server.available);
-    q('.server-title', card).textContent = server.available ? 'Streaming server connected' : 'Stremio streaming server';
-    q('.server-detail', card).textContent = server.available
-      ? 'Torrent, YouTube and archive streams play through ' + server.url
-      : 'Not found at ' + (server.url || '') + '. Torrent, YouTube and archive streams need it: it runs with Stremio desktop or Stremio Service.';
+    const external = server.mode === 'external';
+    card.classList.toggle('online', !!server.available || (!external && !!server.running));
+    card.classList.toggle('problem', external ? (server.checked && !server.available) : !!server.engineMissing);
+    let title, detail;
+    if (external) {
+      title = server.available ? 'External streaming server connected' : 'External streaming server';
+      detail = server.available ? 'Torrent and archive streams play through ' + server.url
+        : 'Not reachable at ' + server.externalUrl + '. Start it, or clear the address below to use the built-in engine.';
+    } else if (server.engineMissing) {
+      title = 'Streaming engine missing';
+      detail = 'lambda-stream-server.exe is not next to LAMBDA Player, so torrents cannot play. Re-extract the portable package.';
+    } else {
+      title = server.running ? 'Streaming engine running' : 'Streaming engine ready';
+      detail = server.running ? 'Built-in engine on 127.0.0.1:' + server.port + '. Torrent, magnet and archive streams play here.'
+        : 'Built in. It starts when you play a torrent, magnet or archive stream.';
+      if (server.error) detail += ' Last problem: ' + server.error;
+    }
+    q('.server-title', card).textContent = title;
+    q('.server-detail', card).textContent = detail;
+    const cacheRow = q('.cache-row', card);
+    cacheRow.hidden = external;
+    q('.cache-detail', card).textContent = 'Cache: ' + (server.cacheDirectory || '') + ' · ' + (server.cacheUsage ? formatBytes(server.cacheUsage) + ' used' : 'empty');
+    const select = q('.cache-size', card);
+    if (server.cacheSize && document.activeElement !== select) {
+      const value = String(server.cacheSize);
+      if (![...select.options].some(o => o.value === value)) select.appendChild(new Option(formatBytes(server.cacheSize), value));
+      select.value = value;
+    }
+    q('[data-cache-reset]', card).hidden = !server.customCacheLocation;
     const input = q('.server-form input', card);
-    if (document.activeElement !== input) input.value = server.url || '';
+    if (document.activeElement !== input) input.value = server.externalUrl || '';
+    if (external) q('.server-external', card).open = true;
   }
 
   // Addon discovery: addon_catalog resources of the installed add-ons
@@ -1327,6 +1359,10 @@
       e.preventDefault();
       bridge.setStreamingServerUrl(q('.server-form input').value.trim());
     });
+    q('.cache-size').addEventListener('change', e => bridge.setCacheSize(Number(e.target.value)));
+    q('[data-cache-folder]').addEventListener('click', () => bridge.chooseCacheLocation());
+    q('[data-cache-reset]').addEventListener('click', () => bridge.resetCacheLocation());
+    q('[data-cache-clear]').addEventListener('click', () => bridge.clearCache());
     q('.sources-refresh').addEventListener('click', () => { if (sources && sources.video) loadStreams(sources.video, true); });
 
     document.addEventListener('keydown', e => {

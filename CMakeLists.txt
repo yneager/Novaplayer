@@ -33,6 +33,8 @@ qt_add_library(lambda_stremio STATIC
   src/stremio/manifest.h
   src/stremio/resources.cpp
   src/stremio/resources.h
+  src/stremio/serverprocess.cpp
+  src/stremio/serverprocess.h
   src/stremio/streamresolver.cpp
   src/stremio/streamresolver.h
   src/stremio/transport.cpp

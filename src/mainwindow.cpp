@@ -151,6 +151,22 @@ void MainWindow::buildUi()
     stremio_ = new StremioBackend(this);
     addonsBridge_ = new AddonsBridge(stremio_, this, this);
     connect(stremio_, &StremioBackend::playRequested, this, &MainWindow::openStream);
+    connect(addonsBridge_, &AddonsBridge::cacheClearing, this, [this] {
+        // The engine is stopped before its cache is deleted.
+        if (!addonPlayback_ || !addonPlayback_->source.viaStreamingServer || !stremio_->streamingServer()->usesBuiltIn()) {
+            return;
+        }
+        rememberCurrentProgress();
+        command({"stop"});
+        mediaLoaded_ = false;
+        clearAddonSession();
+        if (playerChrome_) {
+            playerChrome_->setLoading(false);
+            playerChrome_->setMediaLoaded(false);
+            playerChrome_->setMediaTitle("Open or drop a video", "READY");
+        }
+        if (homePage_) homePage_->setCurrentMedia({}, {}, false);
+    });
 
     homePage_ = new HomePage(addonsBridge_, stack_);
     root_ = new QWidget(stack_);
@@ -771,9 +787,11 @@ void MainWindow::handleEvent(mpv_event *event)
                 playerChrome_->setMediaTitle("Open or drop a video", "READY");
             }
             if (homePage_) homePage_->setCurrentMedia({}, {}, false);
-            showToast(QString("Could not play \"%1\": %2")
-                          .arg(failedName, QString::fromUtf8(mpv_error_string(endFile->error))),
-                      true);
+            QString reason = QString::fromUtf8(mpv_error_string(endFile->error));
+            if (addonPlayback_ && addonPlayback_->source.viaStreamingServer) {
+                reason = QStringLiteral("the streaming engine could not deliver the file (no peers or data)");
+            }
+            showToast(QString("Could not play \"%1\": %2").arg(failedName, reason), true);
         }
         paused_ = true;
         updatePlaybackUi();

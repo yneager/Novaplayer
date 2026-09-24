@@ -88,9 +88,10 @@ void VideoParamsFetcher::fetch(const Stream &stream, const PlaybackSource &sourc
         state->params.size = hints.videoSize;
         finishOne();
     } else {
-        auto combine = [state, hints, finishOne](std::optional<QString> hash, std::optional<qint64> size) {
+        const std::optional<qint64> knownSize = hints.videoSize ? hints.videoSize : source.fileSize;
+        auto combine = [state, hints, knownSize, finishOne](std::optional<QString> hash, std::optional<qint64> size) {
             state->params.hash = hints.videoHash ? hints.videoHash : hash;
-            state->params.size = hints.videoSize ? hints.videoSize : size;
+            state->params.size = knownSize ? knownSize : size;
             finishOne();
         };
         QPointer<QObject> guard(receiver);
@@ -98,7 +99,10 @@ void VideoParamsFetcher::fetch(const Stream &stream, const PlaybackSource &sourc
             if (!guard) {
                 return;
             }
-            if (available) {
+            // Streams served by the streaming server are hashed by it
+            // (/opensubHash, as Stremio does); other links locally, with
+            // their own request headers, which a server could not send.
+            if (available && source.viaStreamingServer) {
                 fetchHashFromServer(mediaUrl, guard, combine);
             } else if (mediaUrl.startsWith(QLatin1String("http"), Qt::CaseInsensitive)) {
                 computeHash(mediaUrl, source.httpHeaders, guard, combine);
@@ -111,6 +115,9 @@ void VideoParamsFetcher::fetch(const Stream &stream, const PlaybackSource &sourc
     // Filename.
     if (hints.filename) {
         state->params.filename = hints.filename;
+        finishOne();
+    } else if (!source.filename.isEmpty()) {
+        state->params.filename = source.filename; // torrent file from /create
         finishOne();
     } else if (!source.infoHash.isEmpty()) {
         fetchTorrentFilename(source, receiver, [state, finishOne, mediaUrl](std::optional<QString> name) {
@@ -140,7 +147,9 @@ void VideoParamsFetcher::fetchHashFromServer(const QString &mediaUrl, QObject *r
         }
         const QJsonObject response = QJsonDocument::fromJson(reply->readAll()).object();
         const QJsonObject result = response.value(QStringLiteral("result")).toObject();
-        if (response.contains(QStringLiteral("error"))) {
+        // {"error": null, "result": {...}} on success (stream-server subtitles.rs).
+        const QJsonValue error = response.value(QStringLiteral("error"));
+        if (!error.isUndefined() && !error.isNull()) {
             done(std::nullopt, std::nullopt);
             return;
         }

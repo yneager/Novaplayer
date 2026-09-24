@@ -5,6 +5,7 @@
 #include "mockaddonserver.h"
 #include "stremio/contentservice.h"
 #include "stremio/lzstring.h"
+#include "stremio/serverprocess.h"
 #include "stremio/streamresolver.h"
 #include "stremio/transport.h"
 #include "stremio/videoparams.h"
@@ -33,6 +34,11 @@ private slots:
     void directUrlNeedsNoServer();
     void externalStreams();
     void serverRequiredWithoutServer();
+    void builtInEngineMissing();
+    void readyLineParsing();
+    void youTubeStreams();
+    void webPageOpensExternally();
+    void torrentCreateErrors();
     void torrentViaStreamingServer();
     void magnetViaStreamingServer();
     void openSubtitlesHash();
@@ -208,7 +214,7 @@ void StreamsTest::directUrlNeedsNoServer()
 {
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/"); // nothing listens there
+    server.setExternalUrl("http://127.0.0.1:1/"); // nothing listens there
     StreamResolver resolver(&network, &server);
     const PlaybackSource source = resolve(resolver, stream(R"({"url":"https://cdn.example/v.mkv",
         "behaviorHints":{"proxyHeaders":{"request":{"Referer":"https://site/"},"response":{"Content-Type":"video/mp4"}}}})"));
@@ -239,15 +245,126 @@ void StreamsTest::serverRequiredWithoutServer()
 {
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/");
+    server.setExternalUrl("http://127.0.0.1:1/");
     StreamResolver resolver(&network, &server);
     const PlaybackSource torrent = resolve(resolver, stream(R"({"infoHash":"24c8802e2624e17d46cd555f364debd949c2c392","fileIdx":0})"));
     QCOMPARE(torrent.kind, PlaybackSource::Kind::Unsupported);
     QVERIFY(torrent.error.contains("streaming server"));
-    // YouTube falls back to the watch page (Stream::download_url).
+    // YouTube never needs the server: it opens in the browser.
     const PlaybackSource youtube = resolve(resolver, stream(R"({"ytId":"dQw4w9WgXcQ"})"));
     QCOMPARE(youtube.kind, PlaybackSource::Kind::OpenExternally);
-    QCOMPARE(youtube.url, QString("https://youtube.com/watch?v=dQw4w9WgXcQ"));
+}
+
+void StreamsTest::builtInEngineMissing()
+{
+    QNetworkAccessManager network;
+    StreamingServerProcess process;
+    StreamingServerProcess::Options options;
+    options.program = QStringLiteral("C:/does/not/exist/lambda-stream-server.exe");
+    process.setOptions(options);
+    StreamingServer server(&network);
+    server.setProcess(&process);
+    QVERIFY(server.usesBuiltIn());
+    StreamResolver resolver(&network, &server);
+    QStringList progress;
+    ResolveContext context;
+    context.progress = [&progress](const QString &message) { progress.append(message); };
+    const PlaybackSource torrent = resolve(resolver, stream(R"({"infoHash":"24c8802e2624e17d46cd555f364debd949c2c392","fileIdx":0})"), context);
+    QCOMPARE(torrent.kind, PlaybackSource::Kind::Unsupported);
+    QVERIFY(torrent.error.contains("missing"));
+    QCOMPARE(progress.size(), 1);
+    QVERIFY(progress.first().contains("Starting"));
+    // An external URL takes over from the built-in engine; empty switches back.
+    server.setExternalUrl("http://127.0.0.1:11470");
+    QVERIFY(!server.usesBuiltIn());
+    QCOMPARE(server.url(), QString("http://127.0.0.1:11470/"));
+    server.setExternalUrl({});
+    QVERIFY(server.usesBuiltIn());
+}
+
+void StreamsTest::readyLineParsing()
+{
+    QCOMPARE(StreamingServerProcess::parseReadyLine("LAMBDA_STREAM_SERVER_READY http://127.0.0.1:53124\r\n"), quint16(53124));
+    QCOMPARE(StreamingServerProcess::parseReadyLine("LAMBDA_STREAM_SERVER_READY http://0.0.0.0:11470"), quint16(0));
+    QCOMPARE(StreamingServerProcess::parseReadyLine("INFO listening"), quint16(0));
+    QCOMPARE(StreamingServerProcess::parseReadyLine("LAMBDA_STREAM_SERVER_READY http://127.0.0.1:99999"), quint16(0));
+}
+
+void StreamsTest::youTubeStreams()
+{
+    QCOMPARE(StreamResolver::youTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10"), QString("dQw4w9WgXcQ"));
+    QCOMPARE(StreamResolver::youTubeId("https://youtu.be/dQw4w9WgXcQ"), QString("dQw4w9WgXcQ"));
+    QCOMPARE(StreamResolver::youTubeId("https://m.youtube.com/shorts/dQw4w9WgXcQ"), QString("dQw4w9WgXcQ"));
+    QCOMPARE(StreamResolver::youTubeId("https://www.youtube.com/channel/UC123"), QString());
+    QCOMPARE(StreamResolver::youTubeId("https://notyoutube.com/watch?v=dQw4w9WgXcQ"), QString());
+
+    QNetworkAccessManager network;
+    StreamingServer server(&network);
+    StreamResolver resolver(&network, &server);
+    const PlaybackSource yt = resolve(resolver, stream(R"({"ytId":"dQw4w9WgXcQ"})"));
+    QCOMPARE(yt.kind, PlaybackSource::Kind::OpenExternally);
+    QCOMPARE(yt.url, QString("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+    const PlaybackSource url = resolve(resolver, stream(R"({"url":"https://youtu.be/dQw4w9WgXcQ"})"));
+    QCOMPARE(url.kind, PlaybackSource::Kind::OpenExternally);
+    QCOMPARE(url.url, yt.url);
+    QVERIFY(!StreamResolver::needsStreamingServer(stream(R"({"ytId":"dQw4w9WgXcQ"})")));
+}
+
+void StreamsTest::webPageOpensExternally()
+{
+    MockAddonServer mock;
+    MockAddonServer::Route page;
+    page.body = "<html><body>watch here</body></html>";
+    page.headers.emplaceBack("Content-Type", "text/html; charset=utf-8");
+    mock.route("/watch", page);
+    MockAddonServer::Route media;
+    media.file = testFile(4096);
+    media.headers.emplaceBack("Content-Type", "video/x-matroska");
+    mock.route("/play?id=1", media);
+    MockAddonServer::Route gone;
+    gone.status = 404;
+    mock.route("/gone", gone);
+    QNetworkAccessManager network;
+    StreamingServer server(&network);
+    StreamResolver resolver(&network, &server);
+    auto urlStream = [&mock](const char *path) {
+        return *Stream::fromJson(QJsonObject{{"url", mock.base() + QString::fromLatin1(path)}});
+    };
+
+    const PlaybackSource html = resolve(resolver, urlStream("/watch"));
+    QCOMPARE(html.kind, PlaybackSource::Kind::OpenExternally);
+    QVERIFY(html.error.contains("web page"));
+    const PlaybackSource video = resolve(resolver, urlStream("/play?id=1"));
+    QCOMPARE(video.kind, PlaybackSource::Kind::Play);
+    QCOMPARE(video.url, mock.base() + "/play?id=1");
+    const PlaybackSource missing = resolve(resolver, urlStream("/gone"));
+    QCOMPARE(missing.kind, PlaybackSource::Kind::Unsupported);
+    QVERIFY(missing.error.contains("404"));
+    // Media extensions skip the check.
+    QVERIFY(StreamResolver::looksLikeMedia("https://x/Movie.2020.MKV?token=1"));
+    QVERIFY(!StreamResolver::looksLikeMedia("https://x/watch"));
+}
+
+void StreamsTest::torrentCreateErrors()
+{
+    int index = -1;
+    QString filename;
+    qint64 size = 0;
+    const QJsonObject pack = jsonValue(R"({"files":[{"name":"Show/S01E01.mkv","length":100},{"name":"Show/S01E02.mkv","length":200}],
+        "guessedFileIdx":1,"hasMetadata":true})").toObject();
+    QVERIFY(StreamResolver::torrentCreateResult(pack, std::nullopt, &index, &filename, &size).isEmpty());
+    QCOMPARE(index, 1);
+    QCOMPARE(filename, QString("S01E02.mkv"));
+    QCOMPARE(size, 200);
+    QVERIFY(StreamResolver::torrentCreateResult(pack, 0, &index, &filename, &size).isEmpty());
+    QCOMPARE(index, 0); // an explicit fileIdx wins over the guess
+    QVERIFY(StreamResolver::torrentCreateResult(pack, 5, &index, nullptr, nullptr).contains("not in the torrent"));
+    const QJsonObject noMeta = jsonValue(R"({"files":[],"hasMetadata":false,"peers":0})").toObject();
+    QVERIFY(StreamResolver::torrentCreateResult(noMeta, 0, &index, nullptr, nullptr).contains("no peers"));
+    const QJsonObject failed = jsonValue(R"({"error":"invalid info hash"})").toObject();
+    QVERIFY(StreamResolver::torrentCreateResult(failed, 0, &index, nullptr, nullptr).contains("invalid info hash"));
+    const QJsonObject noVideo = jsonValue(R"({"files":[{"name":"readme.txt","length":1}]})").toObject();
+    QVERIFY(StreamResolver::torrentCreateResult(noVideo, std::nullopt, &index, nullptr, nullptr).contains("No video file"));
 }
 
 void StreamsTest::torrentViaStreamingServer()
@@ -255,17 +372,25 @@ void StreamsTest::torrentViaStreamingServer()
     MockAddonServer mock;
     mock.route("/settings", kSettings);
     const QString hash = "24c8802e2624e17d46cd555f364debd949c2c392";
-    mock.route(("/" + hash + "/create").toUtf8(), R"({"guessedFileIdx":4})");
+    mock.route(("/" + hash + "/create").toUtf8(), R"({"guessedFileIdx":4,"hasMetadata":true,"files":[
+        {"name":"a","length":1},{"name":"b","length":1},{"name":"c","length":1},{"name":"d","length":1},
+        {"name":"Pack/S01E03.mkv","length":734003200},{"name":"f","length":1},{"name":"g","length":1},
+        {"name":"Pack/Extra.mkv","length":5}]})");
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl(mock.base());
+    server.setExternalUrl(mock.base());
     StreamResolver resolver(&network, &server);
 
-    // Known fileIdx, no trackers: no /create call.
+    // Known fileIdx: LAMBDA still creates (metadata check, see C-019), and
+    // the addon's fileIdx is honoured over the server's guess.
     const PlaybackSource direct = resolve(resolver, stream(R"({"infoHash":"24c8802e2624e17d46cd555f364debd949c2c392","fileIdx":7})"));
     QCOMPARE(direct.kind, PlaybackSource::Kind::Play);
     QCOMPARE(direct.url, mock.base() + "/" + hash + "/7");
-    QVERIFY(!mock.methods().contains("POST"));
+    QCOMPARE(direct.filename, QString("Extra.mkv"));
+    QCOMPARE(*direct.fileSize, 5);
+    const int firstPost = int(mock.methods().indexOf("POST"));
+    QVERIFY(firstPost >= 0);
+    QCOMPARE(QJsonDocument::fromJson(mock.bodies()[firstPost]).object().value("guessFileIdx").toObject(), QJsonObject());
 
     // Season pack without fileIdx: guessFileIdx with season/episode.
     ResolveContext context;
@@ -274,9 +399,10 @@ void StreamsTest::torrentViaStreamingServer()
         stream(R"({"infoHash":"24c8802e2624e17d46cd555f364debd949c2c392","sources":["udp://t:1"]})"), context);
     QCOMPARE(guessed.kind, PlaybackSource::Kind::Play);
     QCOMPARE(*guessed.fileIdx, 4);
+    QCOMPARE(guessed.filename, QString("S01E03.mkv"));
     QCOMPARE(guessed.url, mock.base() + "/" + hash + "/4?tr=dht%3A" + hash + "&tr=tracker%3Audp%3A%2F%2Ft%3A1");
-    const int post = int(mock.methods().indexOf("POST"));
-    QVERIFY(post >= 0);
+    const int post = int(mock.methods().lastIndexOf("POST"));
+    QVERIFY(post > firstPost);
     const QJsonObject body = QJsonDocument::fromJson(mock.bodies()[post]).object();
     QCOMPARE(body.value("guessFileIdx").toObject(), (QJsonObject{{"season", 1}, {"episode", 3}}));
 }
@@ -285,16 +411,26 @@ void StreamsTest::magnetViaStreamingServer()
 {
     MockAddonServer mock;
     mock.route("/settings", kSettings);
-    mock.route("/24c8802e2624e17d46cd555f364debd949c2c392/create", R"({"guessedFileIdx":0})");
+    // Real stream-server answer for a fresh magnet: the guess is there, the
+    // file list only in the stats taken afterwards.
+    mock.route("/24c8802e2624e17d46cd555f364debd949c2c392/create", R"({"guessedFileIdx":0,"files":[],"hasMetadata":false,"peers":0})");
+    mock.route("/24c8802e2624e17d46cd555f364debd949c2c392/stats.json", R"({"files":[{"name":"Movie.mkv","length":10}],"hasMetadata":true})");
+    // Dead torrent: metadata never arrives.
+    mock.route("/1111111111111111111111111111111111111111/create", R"({"files":[],"hasMetadata":false,"peers":0})");
+    mock.route("/1111111111111111111111111111111111111111/stats.json", R"({"files":[],"hasMetadata":false,"peers":0})");
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl(mock.base() + "/");
+    server.setExternalUrl(mock.base() + "/");
     StreamResolver resolver(&network, &server);
     const PlaybackSource source = resolve(resolver,
         stream(R"({"url":"magnet:?xt=urn:btih:24c8802e2624e17d46cd555f364debd949c2c392&tr=udp%3A%2F%2Fa%3A1"})"));
     QCOMPARE(source.kind, PlaybackSource::Kind::Play);
     QVERIFY(source.url.contains("/24c8802e2624e17d46cd555f364debd949c2c392/0?tr="));
     QVERIFY(source.viaStreamingServer);
+    QCOMPARE(source.filename, QString("Movie.mkv"));
+    const PlaybackSource dead = resolve(resolver, stream(R"({"url":"magnet:?xt=urn:btih:1111111111111111111111111111111111111111"})"));
+    QCOMPARE(dead.kind, PlaybackSource::Kind::Unsupported);
+    QVERIFY(dead.error.contains("no peers"));
 }
 
 void StreamsTest::openSubtitlesHash()
@@ -312,7 +448,7 @@ void StreamsTest::videoParamsFromHints()
 {
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/");
+    server.setExternalUrl("http://127.0.0.1:1/");
     VideoParamsFetcher fetcher(&network, &server);
     const Stream s = stream(R"({"url":"https://x/y.mkv","behaviorHints":{"videoHash":"abc","videoSize":42,"filename":"Show.S01E02.mkv"}})");
     PlaybackSource source;
@@ -331,7 +467,7 @@ void StreamsTest::videoParamsComputedLocally()
     mock.route("/media/The%20Movie%20(2020).mkv", file);
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/");
+    server.setExternalUrl("http://127.0.0.1:1/");
     VideoParamsFetcher fetcher(&network, &server);
     PlaybackSource source;
     source.url = mock.base() + "/media/The%20Movie%20(2020).mkv";
@@ -349,13 +485,14 @@ void StreamsTest::videoParamsFromServer()
 {
     MockAddonServer mock;
     mock.route("/settings", kSettings);
-    mock.route("/opensubHash?videoUrl=https%3A%2F%2Fcdn%2Fv.mkv", R"({"result":{"hash":"0123456789abcdef","size":12345}})");
+    mock.route("/opensubHash?videoUrl=https%3A%2F%2Fcdn%2Fv.mkv", R"({"error":null,"result":{"hash":"0123456789abcdef","size":12345}})");
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl(mock.base());
+    server.setExternalUrl(mock.base());
     VideoParamsFetcher fetcher(&network, &server);
     PlaybackSource source;
     source.url = "https://cdn/v.mkv";
+    source.viaStreamingServer = true; // only server streams are hashed by the server
     const VideoParams p = params(fetcher, stream(R"({"url":"https://cdn/v.mkv","behaviorHints":{"videoSize":99}})"), source);
     QCOMPARE(*p.hash, QString("0123456789abcdef"));
     QCOMPARE(*p.size, 99); // hint wins
@@ -371,7 +508,7 @@ void StreamsTest::videoParamsNoRangeSupport()
     mock.route("/v.mkv", file);
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/");
+    server.setExternalUrl("http://127.0.0.1:1/");
     VideoParamsFetcher fetcher(&network, &server);
     PlaybackSource source;
     source.url = mock.base() + "/v.mkv";
@@ -394,7 +531,7 @@ void StreamsTest::videoParamsFollowRedirects()
     mock.route("/real/video.mkv", file);
     QNetworkAccessManager network;
     StreamingServer server(&network);
-    server.setUrl("http://127.0.0.1:1/");
+    server.setExternalUrl("http://127.0.0.1:1/");
     VideoParamsFetcher fetcher(&network, &server);
     PlaybackSource source;
     source.url = mock.base() + "/v/video.mkv";

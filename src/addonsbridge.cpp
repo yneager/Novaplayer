@@ -6,6 +6,7 @@
 #include "stremio/transport.h"
 
 #include <QDesktopServices>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QJsonDocument>
@@ -52,9 +53,10 @@ AddonsBridge::AddonsBridge(StremioBackend *backend, QWidget *dialogParent, QObje
     , dialogParent_(dialogParent)
 {
     connect(backend_->addons(), &AddonManager::changed, this, &AddonsBridge::emitState);
-    connect(backend_->streamingServer(), &StreamingServer::availabilityChanged, this, [this] {
-        emit streamingServerChanged(streamingServerStatus());
-    });
+    auto emitServer = [this] { emit streamingServerChanged(streamingServerStatus()); };
+    connect(backend_->streamingServer(), &StreamingServer::availabilityChanged, this, emitServer);
+    connect(backend_->serverProcess(), &StreamingServerProcess::started, this, emitServer);
+    connect(backend_->serverProcess(), &StreamingServerProcess::stopped, this, emitServer);
 }
 
 // ---- Addons -------------------------------------------------------------------
@@ -62,10 +64,21 @@ AddonsBridge::AddonsBridge(StremioBackend *backend, QWidget *dialogParent, QObje
 QJsonObject AddonsBridge::streamingServerStatus() const
 {
     const StreamingServer *server = backend_->streamingServer();
+    const StreamingServerProcess *process = backend_->serverProcess();
     return {
+        {"mode", server->usesBuiltIn() ? "builtin" : "external"},
         {"url", server->url()},
+        {"externalUrl", server->externalUrl()},
         {"available", server->isAvailable()},
         {"checked", server->lastChecked().isValid()},
+        {"running", process->isRunning()},
+        {"port", int(process->port())},
+        {"engineMissing", !process->isAvailable()},
+        {"error", process->lastError()},
+        {"cacheDirectory", QDir::toNativeSeparators(backend_->cacheDirectory())},
+        {"customCacheLocation", backend_->hasCustomCacheLocation()},
+        {"cacheSize", double(backend_->cacheSizeLimit())},
+        {"cacheUsage", double(backend_->cacheUsage())},
     };
 }
 
@@ -262,9 +275,50 @@ void AddonsBridge::setStreamingServerUrl(const QString &url)
 
 void AddonsBridge::checkStreamingServer()
 {
-    backend_->streamingServer()->probe(this, [this](bool) {
+    StreamingServer *server = backend_->streamingServer();
+    if (server->usesBuiltIn()) {
+        // The built-in engine starts on demand; just report its state.
+        emit streamingServerChanged(streamingServerStatus());
+        return;
+    }
+    server->probe(this, [this](bool) {
         emit streamingServerChanged(streamingServerStatus());
     }, true);
+}
+
+void AddonsBridge::setCacheSize(double bytes)
+{
+    backend_->setCacheSizeLimit(qint64(bytes));
+    emit streamingServerChanged(streamingServerStatus());
+}
+
+void AddonsBridge::chooseCacheLocation()
+{
+    const QString folder = QFileDialog::getExistingDirectory(dialogParent_, tr("Stream cache location"),
+                                                             backend_->cacheLocation());
+    if (folder.isEmpty()) {
+        return;
+    }
+    emit cacheClearing();
+    backend_->setCacheLocation(folder);
+    emit streamingServerChanged(streamingServerStatus());
+    emit notify(tr("Stream cache moved to %1").arg(QDir::toNativeSeparators(backend_->cacheDirectory())), false);
+}
+
+void AddonsBridge::resetCacheLocation()
+{
+    emit cacheClearing();
+    backend_->setCacheLocation(QString());
+    emit streamingServerChanged(streamingServerStatus());
+}
+
+void AddonsBridge::clearCache()
+{
+    emit cacheClearing();
+    QString error;
+    const bool ok = backend_->clearCache(&error);
+    emit streamingServerChanged(streamingServerStatus());
+    emit notify(ok ? tr("Stream cache cleared.") : error, !ok);
 }
 
 QJsonArray AddonsBridge::addonCatalogRows() const
@@ -467,6 +521,9 @@ void AddonsBridge::play(const QJsonObject &streamJson, const QJsonObject &contex
     emit playStatus(QJsonObject{{"state", "resolving"}});
     ResolveContext resolveContext;
     resolveContext.seriesInfo = playback.seriesInfo;
+    resolveContext.progress = [this](const QString &message) {
+        emit playStatus(QJsonObject{{"state", "resolving"}, {"message", message}});
+    };
     backend_->resolver()->resolve(*stream, resolveContext, this, [this, playback](const PlaybackSource &source) mutable {
         switch (source.kind) {
         case PlaybackSource::Kind::Play:
@@ -476,7 +533,9 @@ void AddonsBridge::play(const QJsonObject &streamJson, const QJsonObject &contex
             break;
         case PlaybackSource::Kind::OpenExternally:
             openExternal(source.url);
-            emit playStatus(QJsonObject{{"state", "external"}, {"message", QStringLiteral("Opened in your browser.")}});
+            emit playStatus(QJsonObject{{"state", "external"},
+                                        {"message", source.error.isEmpty() ? tr("Opened in your browser.")
+                                                                           : source.error + QLatin1Char(' ') + tr("Opened in your browser.")}});
             break;
         case PlaybackSource::Kind::Unsupported:
             emit playStatus(QJsonObject{{"state", "error"}, {"message", source.error}});

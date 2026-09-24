@@ -45,6 +45,10 @@ public slots:
     void openExternal(const QString &url);
     void setStreamingServerUrl(const QString &url);
     void checkStreamingServer();
+    void setCacheSize(double bytes);
+    void chooseCacheLocation();
+    void resetCacheLocation();
+    void clearCache();
     QJsonArray addonCatalogRows() const;
 
     // Home / Search / Discover
@@ -73,6 +77,8 @@ signals:
     void playStatus(const QJsonObject &status);
     void streamingServerChanged(const QJsonObject &status);
     void notify(const QString &message, bool warning);
+    // Before the engine cache is deleted (the player stops engine streams).
+    void cacheClearing();
 
 private:
     struct MetaSession

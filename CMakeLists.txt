@@ -9,6 +9,10 @@ find_package(Qt6 REQUIRED COMPONENTS Core Network Widgets OpenGLWidgets Quick We
 
 # Stremio addon protocol client (no GUI dependencies; shared with the tests).
 qt_add_library(lambda_stremio STATIC
+  src/stremio/addonclient.cpp
+  src/stremio/addonclient.h
+  src/stremio/addonmanager.cpp
+  src/stremio/addonmanager.h
   src/stremio/addonurl.cpp
   src/stremio/addonurl.h
   src/stremio/capabilities.cpp
@@ -102,6 +106,8 @@ if(LAMBDA_BUILD_TESTS)
   enable_testing()
   find_package(Qt6 REQUIRED COMPONENTS Test)
   set(LAMBDA_TESTS
+    addonclient
+    addonmanager
     addonurl
     capabilities
     manifest
@@ -109,7 +115,7 @@ if(LAMBDA_BUILD_TESTS)
     transport
   )
   foreach(test_name IN LISTS LAMBDA_TESTS)
-    qt_add_executable(tst_${test_name} tests/stremio/tst_${test_name}.cpp tests/stremio/testutil.h)
+    qt_add_executable(tst_${test_name} tests/stremio/tst_${test_name}.cpp tests/stremio/testutil.h tests/stremio/mockaddonserver.h)
     target_include_directories(tst_${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/stremio")
     target_link_libraries(tst_${test_name} PRIVATE lambda_stremio Qt6::Test)
     if(MSVC)

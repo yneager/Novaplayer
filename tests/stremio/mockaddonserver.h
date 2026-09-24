@@ -25,6 +25,10 @@ public:
         QList<QPair<QByteArray, QByteArray>> headers;
         int delayMs = 0;
         bool neverAnswer = false;
+        // When set, the route serves this file and honours "Range: bytes=a-b"
+        // with 206 Partial Content (unless ignoreRange).
+        QByteArray file;
+        bool ignoreRange = false;
     };
 
     explicit MockAddonServer(QObject *parent = nullptr)
@@ -53,7 +57,11 @@ public:
 
     QStringList requests() const { return requests_; }
     int count(const QByteArray &target) const { return requests_.count(QString::fromUtf8(target)); }
-    void clearRequests() { requests_.clear(); }
+    void clearRequests() { requests_.clear(); methods_.clear(); bodies_.clear(); headers_.clear(); }
+    QStringList methods() const { return methods_; }
+    QList<QByteArray> bodies() const { return bodies_; }
+    // Raw header lines ("Name: value\r") of every request.
+    QList<QList<QByteArray>> requestHeaders() const { return headers_; }
 
 private:
     void onReadyRead(QTcpSocket *socket)
@@ -64,11 +72,27 @@ private:
         if (end < 0) {
             return;
         }
+        const QByteArray head = buffer.left(end);
+        qsizetype contentLength = 0;
+        for (const QByteArray &line : head.split('\n')) {
+            if (line.toLower().startsWith("content-length:")) {
+                contentLength = line.mid(15).trimmed().toLongLong();
+            }
+        }
+        if (buffer.size() < end + 4 + contentLength) {
+            return; // wait for the body
+        }
+        const QByteArray body = buffer.mid(end + 4, contentLength);
         const QByteArray requestLine = buffer.left(buffer.indexOf("\r\n"));
         buffers_.remove(socket);
         const QList<QByteArray> parts = requestLine.split(' ');
         const QByteArray target = parts.size() > 1 ? parts[1] : QByteArray();
         requests_.append(QString::fromUtf8(target));
+        methods_.append(QString::fromUtf8(parts.value(0)));
+        bodies_.append(body);
+        QList<QByteArray> headerLines = head.split('\n');
+        headerLines.removeFirst();
+        headers_.append(headerLines);
 
         Route r;
         if (routes_.contains(target)) {
@@ -79,6 +103,22 @@ private:
         }
         if (r.neverAnswer) {
             return;
+        }
+        if (!r.file.isEmpty()) {
+            r.body = r.file;
+            r.status = 200;
+            for (const QByteArray &line : headerLines) {
+                const QByteArray lower = line.toLower();
+                if (!r.ignoreRange && lower.startsWith("range: bytes=")) {
+                    const QList<QByteArray> range = line.trimmed().mid(13).split('-');
+                    const qint64 from = range.value(0).toLongLong();
+                    const qint64 to = qMin<qint64>(range.value(1).toLongLong(), r.file.size() - 1);
+                    r.body = r.file.mid(from, to - from + 1);
+                    r.status = 206;
+                    r.headers.emplaceBack("Content-Range", "bytes " + QByteArray::number(from) + "-"
+                                              + QByteArray::number(to) + "/" + QByteArray::number(r.file.size()));
+                }
+            }
         }
         QPointer<QTcpSocket> guard(socket);
         auto respond = [guard, r] {
@@ -104,4 +144,7 @@ private:
     QHash<QByteArray, Route> routes_;
     QHash<QTcpSocket *, QByteArray> buffers_;
     QStringList requests_;
+    QStringList methods_;
+    QList<QByteArray> bodies_;
+    QList<QList<QByteArray>> headers_;
 };

@@ -19,16 +19,24 @@ qt_add_library(lambda_stremio STATIC
   src/stremio/capabilities.h
   src/stremio/common.cpp
   src/stremio/common.h
+  src/stremio/contentservice.cpp
+  src/stremio/contentservice.h
   src/stremio/json.cpp
   src/stremio/json.h
   src/stremio/legacytransport.cpp
   src/stremio/legacytransport.h
+  src/stremio/lzstring.cpp
+  src/stremio/lzstring.h
   src/stremio/manifest.cpp
   src/stremio/manifest.h
   src/stremio/resources.cpp
   src/stremio/resources.h
+  src/stremio/streamresolver.cpp
+  src/stremio/streamresolver.h
   src/stremio/transport.cpp
   src/stremio/transport.h
+  src/stremio/videoparams.cpp
+  src/stremio/videoparams.h
 )
 target_include_directories(lambda_stremio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(lambda_stremio PUBLIC Qt6::Core Qt6::Network)
@@ -112,12 +120,14 @@ if(LAMBDA_BUILD_TESTS)
     capabilities
     manifest
     resources
+    streams
     transport
   )
   foreach(test_name IN LISTS LAMBDA_TESTS)
     qt_add_executable(tst_${test_name} tests/stremio/tst_${test_name}.cpp tests/stremio/testutil.h tests/stremio/mockaddonserver.h)
     target_include_directories(tst_${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/stremio")
     target_link_libraries(tst_${test_name} PRIVATE lambda_stremio Qt6::Test)
+    target_compile_definitions(tst_${test_name} PRIVATE LAMBDA_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/stremio/data")
     if(MSVC)
       target_compile_options(tst_${test_name} PRIVATE /utf-8)
     endif()

@@ -61,3 +61,10 @@ code from it was copied into LAMBDA Player.
 - SHA-256: `693B77D4F32EE9B8BFC995589B5FAD5E99ADF2832738661F5402F9978429A8E3`
 - License: SIL Open Font License 1.1
 - License copy: `licenses/Inter-LICENSE.txt`
+
+## Streaming engine (added in v0.3.0)
+
+| Component | Version / commit | License | Files in package |
+|-----------|------------------|---------|------------------|
+| stremio-native/stream-server | commit `f585ab6` (pinned in `tools/stream-server/versions.json`), built from source with LAMBDA's host and patches in `tools/stream-server/` | MIT | `lambda-stream-server.exe`, `licenses/stream-server-LICENSE.txt` |
+| libtorrent-rasterbar, OpenSSL, Boost, UnRAR source, 7-Zip/LZMA SDK and Rust crates (statically linked into the engine) | as resolved by the pinned vcpkg commit and upstream `Cargo.lock` | BSD-3-Clause and others / Apache-2.0 / BSL-1.0 / UnRAR license / LGPL-2.1 | see `licenses/THIRD-PARTY.txt` |

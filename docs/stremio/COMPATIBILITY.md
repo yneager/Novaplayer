@@ -108,3 +108,30 @@ Reddit thread is cited here.
 ### C-018 — Newly opened video stays paused after Home (LAMBDA, pre-existing)
 - **Found in runtime testing:** `showHome()` pauses mpv and mpv keeps `pause` across `loadfile`, so the next opened file (local or add-on) did not start although the UI showed it playing. Present since v0.2.2.
 - **Fix:** `pause=no` before `loadfile`, as Stremio's mpv shell (`ShellVideo.js`) does after its `loadfile`.
+
+## Built-in streaming engine (standalone playback)
+
+### C-019 — Torrent `/create` also when `fileIdx` is known
+- **Stremio:** `createTorrent.js` skips `/{infoHash}/create` when the stream has a `fileIdx` and no trackers, and goes straight to `/{infoHash}/{fileIdx}`. A dead torrent then shows up as a player that never starts.
+- **LAMBDA:** always calls `/create` and asks the server to resolve the file list (`guessFileIdx: {}`; the addon's `fileIdx` still wins over the guess). The answer is checked before mpv is started: no files → "no peers are sharing it", `fileIdx` past the end → "file is not in the torrent", `error` → shown as is. The file's name and size are kept for subtitle requests.
+- **Test:** `tst_streams::torrentViaStreamingServer`, `tst_streams::torrentCreateErrors`.
+
+### C-020 — YouTube streams
+- **Stremio:** `ytId` streams play through the streaming server's `/yt/{id}` route; without a server, Stremio opens the YouTube page (`Stream::download_url`).
+- **LAMBDA:** always opens the YouTube page in the browser (also for YouTube links in `url` streams); LAMBDA does not bundle a YouTube extractor.
+- **Test:** `tst_streams::youTubeStreams`.
+
+### C-021 — Links that are web pages
+- **Stremio:** hands any `url` stream to the player.
+- **LAMBDA:** a `url` whose path does not name a media file is checked with one ranged request first. `text/html` opens in the browser ("This link is a web page"), 401/403/404/410 are reported, anything else goes to mpv.
+- **Test:** `tst_streams::webPageOpensExternally`.
+
+### C-022 — `/opensubHash` answers with `"error": null`
+- **stream-server** (`routes/subtitles.rs`) answers `{"error": null, "result": {...}}` on success; the first LAMBDA version treated any `error` key as a failure and lost the hash.
+- **LAMBDA:** only a non-null `error` is a failure. Only streams that the server serves are hashed by it; other links are hashed locally so their `proxyHeaders` are sent.
+- **Test:** `tst_streams::videoParamsFromServer`.
+
+### C-023 — Archive streams in stream-server
+- **Found in runtime testing:** the pinned stream-server downloads an HTTP archive to an extension-less temp file and then detects the format by extension (every remote archive failed with "Failed to select archive file"), and its ZIP/TAR readers read into a `ReadBuf::take` view without advancing the buffer (responses with the right headers and no body). Downloaded archives are also left in the temp folder.
+- **LAMBDA:** carries two small patches (`tools/stream-server/patches/`) and points the engine's TMP/TEMP into the stream cache, so "Clear cache" removes downloaded archives.
+- **Test:** runtime — a ZIP stream from the local test add-on plays.

@@ -24,7 +24,8 @@ Layers:
 Testing:
 - `build.ps1 -Test` (local) / CI `ctest`: 8 Qt Test suites with `tests/stremio/mockaddonserver.h`.
 - Runtime harness used for v0.3.0 (not committed, lives in `_local/tools`): `run-test.ps1` (isolated `LAMBDA_DATA_DIR`, `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9223`, `LAMBDA_DEBUG_GRAB`, `LAMBDA_MPV_LOG`), `cdp.ps1` (evaluate JS in `index.html`/`player.html`), `grab.ps1` (window capture) and `testaddon.py` (deterministic local add-on with catalogs, a series with canonical ids, direct/header-protected streams, inline and add-on subtitles, a configure page).
-- Not runtime-tested: playback through the Stremio streaming server (torrent/YouTube/archives) — no server on the test PC.
+- Built-in streaming engine: `tools/stream-server/` (pins in `versions.json`, host, triplet, patches, `build.ps1`); `src/stremio/serverprocess.*` runs it; `StremioBackend` owns cache location/size/clear. Local build: `_local/tools/build-streamserver.ps1` (Rust + vcpkg + libclang in `_local`), `_local/tools/enginetest.ps1` tests the exe directly.
+- YouTube is intentionally not played in LAMBDA (owner decision); YouTube streams open in the browser.
 
 ## Previous Change: v0.2.4 Animated Wheel Scrolling
 
@@ -261,7 +262,7 @@ vapoursynth\Lib\site-packages\vapoursynth\ (vsscript.dll, libvapoursynth.dll, va
 - Test mpv integration changes in-process against `libmpv-2.dll` (for example with a ctypes harness), not only with `mpv.exe` launched with a prepared environment.
 
 ## Next Recommended Tasks
-0. v0.3.0: after the owner allows pushing, confirm the CI run (build + `ctest` + package). Runtime-test streaming-server playback with Stremio Service running (torrent with/without `fileIdx`, magnet, YouTube). Possible follow-ups: next-episode/binge (bingeGroup), a Continue watching for add-on titles, trailers through the streaming server.
+0. v0.3.0: after the owner allows pushing, confirm the CI run (the first `stream-server` job builds libtorrent/Boost/OpenSSL with vcpkg and takes long; later runs use the cache). Possible follow-ups: engine buffering/peer status in the player, next-episode/binge (bingeGroup), a Continue watching for add-on titles, trailers through the streaming server.
 1. Confirm the CI run for this commit passed; download the artifact and runtime-test in `LambdaPlayer.exe`: RIFE 2× on a 24 fps and a 30 fps file (use mpv stats / visual smoothness), seek (click, drag, arrows), pause, embedded + external subtitles, audio-track switch, mute/volume, fullscreen overlay, Off → normal playback.
 2. Test the failure path by renaming `rife\models` in the extracted artifact → selecting RIFE 2× should show an error and stay on Off.
 3. Test on NVIDIA and Intel GPUs and on 1080p/4K content; record performance.

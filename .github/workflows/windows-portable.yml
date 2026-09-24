@@ -8,7 +8,58 @@ on:
 permissions:
   contents: write
 jobs:
+  stream-server:
+    # Built-in streaming engine: stremio-native/stream-server (libtorrent) with
+    # LAMBDA's loopback-only host. Pinned in tools/stream-server/versions.json;
+    # the finished exe is cached until one of those inputs changes.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cached engine
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: stream-server-out
+          key: lambda-stream-server-v1-${{ hashFiles('tools/stream-server/**') }}
+      - name: Rust toolchain (pinned)
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+      - name: Cargo registry cache
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: engine-cargo-${{ hashFiles('tools/stream-server/versions.json') }}
+      - name: vcpkg binary cache
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: vcpkg-binary-cache
+          key: engine-vcpkg-${{ hashFiles('tools/stream-server/versions.json', 'tools/stream-server/triplets/**') }}
+      - name: Build lambda-stream-server.exe
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $pins = Get-Content tools/stream-server/versions.json -Raw | ConvertFrom-Json
+          git clone -q https://github.com/microsoft/vcpkg.git vcpkg
+          git -C vcpkg checkout -q $pins.vcpkg.commit
+          ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          New-Item -ItemType Directory -Force vcpkg-binary-cache | Out-Null
+          $env:VCPKG_DEFAULT_BINARY_CACHE = Join-Path $PWD "vcpkg-binary-cache"
+          $env:LIBCLANG_PATH = "C:/Program Files/LLVM/bin"
+          ./tools/stream-server/build.ps1 -WorkDir (Join-Path $PWD "engine-build") -VcpkgRoot (Join-Path $PWD "vcpkg") -OutDir (Join-Path $PWD "stream-server-out")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lambda-stream-server
+          path: stream-server-out/
+
   build:
+    needs: stream-server
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +154,17 @@ jobs:
           $webProcess=Get-ChildItem portable -Recurse -Filter QtWebEngineProcess.exe|Select-Object -First 1
           $webResources=Get-ChildItem portable -Recurse -Filter qtwebengine_resources.pak|Select-Object -First 1
           if(!$webProcess -or !$webResources){throw "Qt WebEngine runtime resources were not deployed"}
+      - uses: actions/download-artifact@v4
+        with:
+          name: lambda-stream-server
+          path: stream-server-out
+      - name: Bundle streaming engine
+        shell: pwsh
+        run: |
+          Copy-Item stream-server-out/lambda-stream-server.exe portable/
+          New-Item -ItemType Directory -Force portable/licenses | Out-Null
+          Copy-Item stream-server-out/stream-server-LICENSE.txt portable/licenses/
+          Copy-Item tools/stream-server/THIRD-PARTY.txt portable/licenses/
       - name: Bundle MSVC runtime DLLs (app-local, needed by Qt, VapourSynth and the RIFE plugin)
         shell: pwsh
         run: |
@@ -133,6 +195,27 @@ jobs:
             throw "LAMBDA Player exited during startup smoke test with code $($process.ExitCode)"
           }
           Stop-Process -Id $process.Id -Force
+      - name: Smoke-test the bundled streaming engine
+        shell: pwsh
+        run: |
+          $dir = (Resolve-Path portable).Path
+          $info = New-Object System.Diagnostics.ProcessStartInfo
+          $info.FileName = Join-Path $dir "lambda-stream-server.exe"
+          $info.Arguments = "--port 0 --config-dir `"$env:RUNNER_TEMP/engine-config`" --cache-dir `"$env:RUNNER_TEMP/engine-cache`""
+          $info.UseShellExecute = $false
+          $info.RedirectStandardOutput = $true
+          $info.RedirectStandardInput = $true
+          $info.RedirectStandardError = $true
+          $engine = [System.Diagnostics.Process]::Start($info)
+          $read = $engine.StandardOutput.ReadLineAsync()
+          if (-not $read.Wait(30000)) { throw "engine did not report ready" }
+          $line = $read.Result
+          Write-Host $line
+          if ($line -notmatch '^LAMBDA_STREAM_SERVER_READY (http://127\.0\.0\.1:\d+)$') { throw "unexpected engine output: $line" }
+          $settings = Invoke-RestMethod "$($Matches[1])/settings"
+          if (-not $settings.values) { throw "engine /settings answered without values" }
+          $engine.StandardInput.Close()
+          if (-not $engine.WaitForExit(10000)) { $engine.Kill(); throw "engine did not stop when stdin closed" }
       - uses: actions/upload-artifact@v4
         with:
           name: LAMBDA-Player-Windows-x64

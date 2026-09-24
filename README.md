@@ -13,7 +13,7 @@ LAMBDA Player is a Windows video player built with C++20, Qt 6 and libmpv, with 
 - **Discover:** types, catalogs and filters (genre, year…) declared by the add-ons, with endless paging.
 - **Search:** asks every catalog that declares search support; results arrive per add-on.
 - **Details:** metadata, seasons and episodes, and a source picker grouped by add-on.
-- **Playback:** add-on streams play in the existing libmpv player (RIFE included). Stream request headers are applied; torrent, magnet, YouTube and archive streams need the Stremio streaming server (Stremio desktop or Stremio Service) running on this PC.
+- **Playback:** add-on streams play in the existing libmpv player (RIFE included). Stream request headers are applied. Torrent, magnet and archive streams play through LAMBDA's built-in streaming engine (no Stremio app needed); YouTube streams open in the browser.
 - **Subtitles:** subtitle add-ons are asked with the video's file name, size and OpenSubtitles hash; their subtitles and the stream's own subtitles appear with the embedded and external tracks in the subtitle menu, grouped by source.
 - **Fixed:** a video opened after returning Home could stay paused while the controls showed it playing.
 - LAMBDA follows Stremio's own code for every protocol decision; see [docs/stremio/SOURCE_MAP.md](docs/stremio/SOURCE_MAP.md) and [docs/stremio/COMPATIBILITY.md](docs/stremio/COMPATIBILITY.md).
@@ -169,10 +169,12 @@ What plays:
 | Stream kind | How LAMBDA plays it |
 |---|---|
 | Direct `https://` links (incl. debrid links) | libmpv directly, with the add-on's request headers |
-| Torrent / magnet, YouTube, RAR/ZIP/7z/TAR, NZB, FTP | through the Stremio streaming server at `http://127.0.0.1:11470` (Stremio desktop or Stremio Service must be running; the URL can be changed on the Add-ons page) |
-| External / web-player links | opened in your browser |
+| Torrent / magnet (incl. season packs and multi-file torrents), ZIP/RAR/7z/TAR, NZB, FTP | through LAMBDA's built-in streaming engine; playback starts while the file downloads, seeking works |
+| YouTube, external / web-player links, links that are web pages | opened in your browser |
 
-LAMBDA does not include a torrent engine. Add-on configuration pages open in a separate window that cannot access LAMBDA; pressing the page's Install button installs the configured add-on.
+The built-in engine (`lambda-stream-server.exe`, the open-source [stream-server](https://github.com/stremio-native/stream-server)) starts when a torrent or archive is played and stops with LAMBDA. It only accepts connections from this PC. Like any BitTorrent client it also opens a port for peers, so Windows may ask once to allow it through the firewall; torrents still work when you decline, with fewer peers. **Add-ons → Streaming engine** shows its state, the cache folder (default: LAMBDA's data folder), the cache size limit (10 GB by default) and **Clear cache**; an external Stremio server (Stremio Service) can be used instead.
+
+Add-on configuration pages open in a separate window that cannot access LAMBDA; pressing the page's Install button installs the configured add-on.
 
 ## Frame Interpolation (RIFE)
 

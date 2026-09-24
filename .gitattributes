@@ -1,1 +1,2 @@
 tests/stremio/data/** -text
+tools/stream-server/patches/*.patch -text

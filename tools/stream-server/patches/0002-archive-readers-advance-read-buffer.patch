@@ -1,0 +1,39 @@
+diff --git a/server/src/archives/cache.rs b/server/src/archives/cache.rs
+index c617f72..bea5a3f 100644
+--- a/server/src/archives/cache.rs
++++ b/server/src/archives/cache.rs
+@@ -251,10 +251,14 @@ impl AsyncRead for ProgressiveReader {
+                 let mut sub_buf = buf.take(needed);
+                 let start_filled = sub_buf.filled().len();
+                 let poll = Pin::new(&mut self.file).poll_read(cx, &mut sub_buf);
++                let bytes_read = sub_buf.filled().len() - start_filled;
++                // `take` reads into a view of buf's unfilled part; the bytes
++                // only count once buf itself is advanced.
++                unsafe { buf.assume_init(bytes_read) };
++                buf.advance(bytes_read);
+ 
+                 match poll {
+                     Poll::Ready(Ok(())) => {
+-                        let bytes_read = sub_buf.filled().len() - start_filled;
+                         if bytes_read == 0 && needed > 0 {
+                             // Should theoretically not happen if written_bytes > pos
+                             // But could happen if seek pointer is messed up?
+diff --git a/server/src/archives/tar.rs b/server/src/archives/tar.rs
+index 601a779..2644961 100644
+--- a/server/src/archives/tar.rs
++++ b/server/src/archives/tar.rs
+@@ -113,10 +113,13 @@ impl AsyncRead for AsyncRawFileSlice {
+         let start_filled = sub_buf.filled().len();
+ 
+         let poll = Pin::new(&mut self.file).poll_read(cx, &mut sub_buf);
++        let n = sub_buf.filled().len() - start_filled;
++        // `take` reads into a view of buf's unfilled part; advance buf itself.
++        unsafe { buf.assume_init(n) };
++        buf.advance(n);
+ 
+         match poll {
+             Poll::Ready(Ok(())) => {
+-                let n = sub_buf.filled().len() - start_filled;
+                 self.pos += n as u64;
+                 Poll::Ready(Ok(()))
+             }

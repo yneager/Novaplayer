@@ -1,0 +1,16 @@
+LAMBDA Player bundles this program for add-on streams:
+
+lambda-stream-server.exe
+  The open-source Stremio-compatible streaming server
+  https://github.com/stremio-native/stream-server (MIT, see stream-server-LICENSE.txt),
+  built with LAMBDA's loopback-only host (tools/stream-server in the LAMBDA
+  repository). Statically includes, among others:
+    libtorrent-rasterbar 2.1.1   https://libtorrent.org (BSD-3-Clause and others)
+    OpenSSL                      https://www.openssl.org (Apache-2.0)
+    Boost                        https://www.boost.org (BSL-1.0)
+    UnRAR source (RAR streams)   https://www.rarlab.com (UnRAR license: may be used to
+                                 extract RAR archives, not to re-create the RAR format)
+    7-Zip / LZMA SDK             https://www.7-zip.org (LGPL-2.1 / public domain)
+  and the Rust crates listed in the upstream Cargo.lock.
+
+Exact versions are pinned in tools/stream-server/versions.json.
